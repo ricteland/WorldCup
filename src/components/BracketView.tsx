@@ -46,7 +46,7 @@ function Side({
         >
           {side.team?.name ?? side.label ?? "TBD"}
         </span>
-        {side.grade === "EXACT" && <span className="text-[10px] text-emerald-300">✓</span>}
+        {side.grade === "EXACT" && <span className="text-[10px] text-gold-300">✓</span>}
         {side.grade === "WRONG" && <span className="text-[10px] text-red-400">✗</span>}
       </div>
       {score != null && <span className="font-display text-sm font-bold text-slate-200">{score}</span>}

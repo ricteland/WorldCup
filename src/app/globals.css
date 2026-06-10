@@ -12,8 +12,10 @@
   --color-night-900: #0a101e;
   --color-night-800: #101a30;
 
-  --font-display: var(--font-display-var), ui-sans-serif, system-ui, sans-serif;
-  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  /* "Twemoji Country Flags" only contains flag codepoints (Windows fallback,
+     registered by FlagPolyfill) — harmless first entry everywhere else. */
+  --font-display: "Twemoji Country Flags", var(--font-display-var), ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Twemoji Country Flags", var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
 }
 
 html {

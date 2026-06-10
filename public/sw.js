@@ -1,7 +1,13 @@
 // Minimal service worker: cache-first for static assets, network-first for
 // everything else (predictions must always be fresh).
-const CACHE = "wc26-v1";
-const STATIC = ["/assets/icon-192.png", "/assets/icon-512.png", "/assets/logo.svg", "/manifest.webmanifest"];
+const CACHE = "wc26-v2";
+const STATIC = [
+  "/assets/icon-192.png",
+  "/assets/icon-512.png",
+  "/assets/logo.svg",
+  "/assets/TwemojiCountryFlags.woff2",
+  "/manifest.webmanifest",
+];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE).then((c) => c.addAll(STATIC)));

@@ -19,22 +19,23 @@ export function gradeScore(pred: Score | null | undefined, actual: Score | null 
 }
 
 // Tailwind class tokens per grade — the single source of truth for the color key.
+// Golden yellow = exact score, light green = right result, red = wrong.
 export const GRADE_BADGE: Record<Grade, string> = {
-  EXACT: "bg-emerald-400 text-emerald-950",
+  EXACT: "bg-gold-400 text-night-950",
   RESULT: "bg-emerald-900/80 text-emerald-300 ring-1 ring-emerald-500/40",
   WRONG: "bg-red-950/80 text-red-400 ring-1 ring-red-500/40",
   PENDING: "bg-white/5 text-slate-400",
 };
 
 export const GRADE_CARD: Record<Grade, string> = {
-  EXACT: "border-emerald-400/70 bg-emerald-400/10",
+  EXACT: "border-gold-400/70 bg-gold-400/10",
   RESULT: "border-emerald-600/40 bg-emerald-500/5",
   WRONG: "border-red-500/40 bg-red-500/5",
   PENDING: "border-white/10 bg-white/[0.03]",
 };
 
 export const GRADE_TEXT: Record<Grade, string> = {
-  EXACT: "text-emerald-300",
+  EXACT: "text-gold-300",
   RESULT: "text-emerald-500",
   WRONG: "text-red-400",
   PENDING: "text-slate-400",

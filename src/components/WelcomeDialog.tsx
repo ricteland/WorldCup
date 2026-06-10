@@ -103,7 +103,7 @@ export function WelcomeProvider({
               <div>
                 <h3 className="mb-1.5 font-semibold text-slate-100">Color key</h3>
                 <div className="flex flex-wrap gap-1.5">
-                  <Chip className="bg-emerald-400 text-emerald-950">exact score</Chip>
+                  <Chip className="bg-gold-400 text-night-950">exact score</Chip>
                   <Chip className="bg-emerald-900/80 text-emerald-300 ring-1 ring-emerald-500/40">
                     right result
                   </Chip>

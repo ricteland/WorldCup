@@ -5,7 +5,7 @@ front** — every one of the 104 match scores. Those predictions cascade into ea
 player's own **predicted group tables** and **predicted knockout bracket**, then get
 graded automatically against real results:
 
-- 🟢 **bright green** — exact score
+- 🟡 **golden yellow** — exact score
 - 🟩 **light green** — right result, wrong score
 - 🔴 **red** — wrong
 - ⬜ neutral — not played yet

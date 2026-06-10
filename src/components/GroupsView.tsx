@@ -76,7 +76,7 @@ export function GroupsView({ payload }: { payload: GroupsPayload }) {
                         >
                           {r.team.name}
                         </span>
-                        {r.grade === "EXACT" && <span className="text-emerald-300">✓</span>}
+                        {r.grade === "EXACT" && <span className="text-gold-300">✓</span>}
                         {r.grade === "WRONG" && <span className="text-red-400">✗</span>}
                       </div>
                     </td>
