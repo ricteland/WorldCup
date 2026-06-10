@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- PLACEHOLDER LOGO: replace this file with the real World Cup 2026 artwork
+     (and regenerate icon-192.png / icon-512.png to match).
+     The in-app logo lives in src/components/Logo.tsx — swap it for an <Image>
+     pointing at this file once real artwork is in place. -->
+<svg width="128" height="128" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="lg" x1="0" y1="0" x2="64" y2="64">
+      <stop offset="0%" stop-color="#34d399"/>
+      <stop offset="55%" stop-color="#10b981"/>
+      <stop offset="100%" stop-color="#f5c842"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="#060a13"/>
+  <circle cx="32" cy="32" r="24" stroke="url(#lg)" stroke-width="3"/>
+  <path d="M32 21l9 6.5-3.4 10.6H26.4L23 27.5 32 21z" fill="url(#lg)" opacity="0.9"/>
+  <path d="M32 21v-6M41 27.5l6-2.5M37.6 38l3.4 5M26.4 38l-3.4 5M23 27.5l-6-2.5" stroke="url(#lg)" stroke-width="2" stroke-linecap="round"/>
+</svg>

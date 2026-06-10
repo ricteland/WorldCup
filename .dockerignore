@@ -1,0 +1,13 @@
+node_modules
+.next
+.git
+*.md
+prisma/dev.db*
+prisma/*.db
+.env
+.env.*
+!.env.example
+scripts
+Dockerfile
+docker-compose.yml
+Caddyfile

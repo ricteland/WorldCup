@@ -1,0 +1,40 @@
+# One stack: app (Next.js) + caddy (automatic HTTPS). SQLite lives on the
+# `dbdata` named volume so data survives redeploys (PLAN.MD §12).
+#
+# Usage on the server:
+#   cp .env.example .env   # then fill in real values
+#   DOMAIN=predictions.example.com docker compose up -d --build
+
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: file:/data/app.db
+    volumes:
+      - dbdata:/data
+    expose:
+      - "3000"
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      # A record for this domain must point at the server; Caddy then issues
+      # the Let's Encrypt certificate automatically.
+      DOMAIN: ${DOMAIN:-localhost}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - app
+
+volumes:
+  dbdata:
+  caddy_data:
+  caddy_config:

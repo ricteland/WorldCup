@@ -1,0 +1,6 @@
+# Automatic HTTPS for the app — one line of real config (PLAN.MD §3).
+# DOMAIN comes from the environment (see docker-compose.yml).
+{$DOMAIN} {
+	encode gzip
+	reverse_proxy app:3000
+}

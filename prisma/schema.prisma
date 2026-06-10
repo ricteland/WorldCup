@@ -1,0 +1,95 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Team {
+  id        String  @id @default(cuid())
+  name      String  @unique
+  code      String  @unique // FIFA 3-letter code
+  groupName String // A..L
+  flagEmoji String
+
+  homeMatches Match[] @relation("homeTeam")
+  awayMatches Match[] @relation("awayTeam")
+}
+
+model Player {
+  id            String   @id @default(cuid())
+  displayName   String   @unique
+  recoveryToken String   @unique
+  isAdmin       Boolean  @default(false)
+  createdAt     DateTime @default(now())
+
+  predictions ScorePred[]
+  bracketPicks BracketPick[]
+}
+
+model Match {
+  id         Int      @id // official match number 1..104
+  externalId String?  // id in the results source, if it differs
+  stage      String   // GROUP | R32 | R16 | QF | SF | THIRD | FINAL
+  groupName  String?  // A..L for group matches
+  matchday   String?  // source round label, e.g. "Matchday 3"
+  venue      String?
+  kickoffUtc DateTime
+  homeTeamId String?
+  awayTeamId String?
+  homeSlot   String?  // seed label for knockouts, e.g. "1E", "3A/B/C/D/F", "W74", "L101"
+  awaySlot   String?
+  homeScore  Int?
+  awayScore  Int?
+  // Knockout only: the team that advanced when the match was decided on
+  // penalties (score level after extra time). Set by sync or admin override.
+  winnerTeamId String?
+  status     String   @default("SCHEDULED") // SCHEDULED | LIVE | FINISHED
+
+  homeTeam Team? @relation("homeTeam", fields: [homeTeamId], references: [id])
+  awayTeam Team? @relation("awayTeam", fields: [awayTeamId], references: [id])
+
+  predictions ScorePred[]
+}
+
+model ScorePred {
+  id        String   @id @default(cuid())
+  playerId  String
+  matchId   Int
+  homeScore Int
+  awayScore Int
+  // Knockout matches only: snapshot of the participants this prediction was made
+  // against (the player's own cascade). If the cascade later disagrees, the
+  // prediction is stale and must be re-entered.
+  predHomeTeamId   String?
+  predAwayTeamId   String?
+  // Knockout matches only: required when the predicted score is a draw, so the
+  // cascade always has a winner to advance.
+  predWinnerTeamId String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  player Player @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  match  Match  @relation(fields: [matchId], references: [id], onDelete: Cascade)
+
+  @@unique([playerId, matchId])
+}
+
+model BracketPick {
+  id       String @id @default(cuid())
+  playerId String
+  slot     String // e.g. "M73H", "M89A", "CHAMPION" — see lib/bracket.ts
+  round    String // R32 | R16 | QF | SF | FINAL | CHAMPION
+  teamId   String
+
+  player Player @relation(fields: [playerId], references: [id], onDelete: Cascade)
+
+  @@unique([playerId, slot])
+}
+
+model Setting {
+  key   String @id
+  value String
+}
