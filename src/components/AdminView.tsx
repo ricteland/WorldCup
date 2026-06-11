@@ -4,7 +4,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { RefreshCw, Save, Trash2 } from "lucide-react";
+import { LockKeyhole, RefreshCw, Save, Trash2 } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { Button, Card, Chip, Input } from "./ui";
 import { LocalTime } from "./LocalTime";
@@ -35,6 +35,8 @@ export interface AdminData {
   matches: AdminMatchRow[];
   players: AdminPlayerRow[];
   settings: { leagueCode: string; lockMinutes: string; scoring: string };
+  /** Predictions are manually closed for everyone while true. */
+  predictionsLocked: boolean;
   lastSync: { ok: boolean; ranAt: string; updated: number; finished: number; error?: string } | null;
 }
 
@@ -204,6 +206,7 @@ function PlayerRow({ p }: { p: AdminPlayerRow }) {
 export function AdminView({ data }: { data: AdminData }) {
   const router = useRouter();
   const [syncing, setSyncing] = useState(false);
+  const [pausing, setPausing] = useState(false);
   const [settings, setSettings] = useState(data.settings);
   const [settingsMsg, setSettingsMsg] = useState<string | null>(null);
   const [query, setQuery] = useState("");
@@ -212,6 +215,17 @@ export function AdminView({ data }: { data: AdminData }) {
     setSyncing(true);
     await fetch("/api/admin/sync", { method: "POST" });
     setSyncing(false);
+    router.refresh();
+  }
+
+  async function toggleLock() {
+    setPausing(true);
+    await fetch("/api/admin/settings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ predictionsLocked: data.predictionsLocked ? "0" : "1" }),
+    });
+    setPausing(false);
     router.refresh();
   }
 
@@ -236,6 +250,32 @@ export function AdminView({ data }: { data: AdminData }) {
       <h1 className="font-display text-2xl font-bold text-slate-100">
         Admin <span className="text-sm font-normal text-gold-400">league control</span>
       </h1>
+
+      <Card className="space-y-2 p-4">
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-slate-200">Predictions</h2>
+          <Button
+            variant={data.predictionsLocked ? "primary" : "danger"}
+            className="px-3 py-1.5 text-xs"
+            disabled={pausing}
+            onClick={toggleLock}
+          >
+            <LockKeyhole size={13} />
+            {pausing ? "…" : data.predictionsLocked ? "Reopen predictions" : "Close predictions"}
+          </Button>
+        </div>
+        {data.predictionsLocked ? (
+          <p className="rounded-xl bg-red-500/10 px-3 py-2 text-xs text-red-300 ring-1 ring-red-500/30">
+            Predictions are <strong>manually closed</strong> for everyone — nobody can save or edit
+            a pick until you reopen them. Result updates keep flowing as normal.
+          </p>
+        ) : (
+          <p className="text-xs text-slate-500">
+            Open — matches lock on their own rolling deadline ({data.settings.lockMinutes} min
+            before kickoff). Closing overrides that window for every match at once.
+          </p>
+        )}
+      </Card>
 
       <Card className="space-y-2 p-4">
         <div className="flex items-center justify-between">

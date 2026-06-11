@@ -11,6 +11,9 @@ export interface AppConfig {
   appUrl: string;
   openfootballUrl: string;
   pollMinutes: number;
+  /** Admin kill switch: every match is closed for predictions while true,
+   *  regardless of its rolling kickoff-based deadline. */
+  predictionsLocked: boolean;
 }
 
 const DEFAULTS = {
@@ -47,6 +50,7 @@ export async function getConfig(): Promise<AppConfig> {
     appUrl: process.env.APP_URL ?? DEFAULTS.appUrl,
     openfootballUrl: process.env.OPENFOOTBALL_URL ?? DEFAULTS.openfootballUrl,
     pollMinutes: Number(process.env.RESULTS_POLL_MINUTES ?? DEFAULTS.pollMinutes),
+    predictionsLocked: s.predictionsLocked === "1",
   };
 }
 

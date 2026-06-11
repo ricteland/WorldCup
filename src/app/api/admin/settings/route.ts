@@ -5,7 +5,7 @@ import { requireAdmin } from "@/lib/session";
 // POST /api/admin/settings — update [CONFIG] values live (league code, lock
 // window, scoring weights). Stored as Setting rows, which take precedence over
 // env vars.
-const EDITABLE = new Set(["leagueCode", "lockMinutes", "scoring"]);
+const EDITABLE = new Set(["leagueCode", "lockMinutes", "scoring", "predictionsLocked"]);
 
 export async function POST(req: Request) {
   try {
@@ -30,6 +30,9 @@ export async function POST(req: Request) {
         { error: "lockMinutes must be a whole number of minutes" },
         { status: 400 }
       );
+    }
+    if (key === "predictionsLocked" && value !== "0" && value !== "1") {
+      return NextResponse.json({ error: "predictionsLocked must be 0 or 1" }, { status: 400 });
     }
     if (key === "scoring") {
       try {

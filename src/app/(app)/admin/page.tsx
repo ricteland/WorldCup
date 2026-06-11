@@ -68,6 +68,7 @@ export default async function AdminPage() {
           lockMinutes: String(cfg.lockMinutes),
           scoring: JSON.stringify(cfg.scoring),
         },
+        predictionsLocked: cfg.predictionsLocked,
         lastSync,
       }}
     />

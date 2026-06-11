@@ -357,9 +357,15 @@ export function MatchList({ payload }: { payload: MatchesPayload }) {
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-2">
         <h1 className="font-display text-2xl font-bold text-slate-100">Matches</h1>
-        <Chip className="bg-white/5 text-slate-400">
-          <LockKeyhole size={11} /> locks {payload.lockMinutes} min before kickoff
-        </Chip>
+        {payload.manualLock ? (
+          <Chip className="bg-red-500/10 text-red-300 ring-1 ring-red-500/30">
+            <LockKeyhole size={11} /> predictions closed by the admin
+          </Chip>
+        ) : (
+          <Chip className="bg-white/5 text-slate-400">
+            <LockKeyhole size={11} /> locks {payload.lockMinutes} min before kickoff
+          </Chip>
+        )}
       </div>
 
       {todayCount > 0 && (

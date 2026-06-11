@@ -251,6 +251,16 @@ console.log("10. per-match lock");
   await admin.req("POST", "/api/admin/settings", { lockMinutes: "30" });
   const allowed = await player.req("POST", "/api/predictions", { matchId: 75, homeScore: 1, awayScore: 0 });
   check("predictions allowed again outside lock window", allowed.status === 200);
+
+  // manual league-wide lock overrides the rolling window entirely
+  await admin.req("POST", "/api/admin/settings", { predictionsLocked: "1" });
+  const closed = await player.req("POST", "/api/predictions", { matchId: 75, homeScore: 2, awayScore: 0 });
+  check("predictions rejected while manually closed", closed.status === 423);
+  const m = await player.req("GET", "/api/matches");
+  check("matches payload reports the manual lock", m.json?.manualLock === true);
+  await admin.req("POST", "/api/admin/settings", { predictionsLocked: "0" });
+  const reopened = await player.req("POST", "/api/predictions", { matchId: 75, homeScore: 2, awayScore: 0 });
+  check("predictions allowed again after reopening", reopened.status === 200);
 }
 
 console.log("11. admin deletes a player");

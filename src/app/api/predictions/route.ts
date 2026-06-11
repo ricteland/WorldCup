@@ -36,6 +36,12 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "This match has already been played" }, { status: 423 });
   }
   const cfg = await getConfig();
+  if (cfg.predictionsLocked) {
+    return NextResponse.json(
+      { error: "Predictions are closed right now (locked by the admin)" },
+      { status: 423 }
+    );
+  }
   if (isMatchLocked(match.kickoffUtc, cfg.lockMinutes)) {
     return NextResponse.json(
       { error: `This match is locked (predictions close ${cfg.lockMinutes} min before kickoff)` },

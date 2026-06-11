@@ -69,6 +69,8 @@ export interface MatchView {
 
 export interface MatchesPayload {
   lockMinutes: number;
+  /** Admin has manually closed all predictions (overrides the rolling window). */
+  manualLock: boolean;
   matches: MatchView[];
 }
 
@@ -116,14 +118,14 @@ export async function getMatchesView(playerId: string): Promise<MatchesPayload> 
       grade,
       points: matchPointsFor(grade, cfg.scoring, matchInvolves(m, boostedId)),
       boost: matchInvolves(m, boostedId) ? cfg.scoring.boostMultiplier : null,
-      locked: isMatchLocked(m.kickoffUtc, cfg.lockMinutes),
+      locked: cfg.predictionsLocked || isMatchLocked(m.kickoffUtc, cfg.lockMinutes),
       lockAtUtc: matchLockAt(m.kickoffUtc, cfg.lockMinutes).toISOString(),
       open: isGroup || open.has(m.id),
       stale: stale.has(m.id),
     };
   });
 
-  return { lockMinutes: cfg.lockMinutes, matches };
+  return { lockMinutes: cfg.lockMinutes, manualLock: cfg.predictionsLocked, matches };
 }
 
 // ---------------------------------------------------------------------------
@@ -398,7 +400,7 @@ export async function getBracketView(playerId: string): Promise<BracketPayload> 
         pred: p
           ? { homeScore: p.homeScore, awayScore: p.awayScore, predWinnerTeamId: p.predWinnerTeamId }
           : null,
-        locked: isMatchLocked(db.kickoffUtc, cfg.lockMinutes),
+        locked: cfg.predictionsLocked || isMatchLocked(db.kickoffUtc, cfg.lockMinutes),
         lockAtUtc: matchLockAt(db.kickoffUtc, cfg.lockMinutes).toISOString(),
         open: open.has(num),
         stale: stale.has(num),
