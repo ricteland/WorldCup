@@ -1,7 +1,7 @@
 // Starts the results poller inside the app process (PLAN.MD §3/§8):
 // poll the openfootball source every RESULTS_POLL_MINUTES (default 20).
 // When a football-data.org key is configured and a match is in play, the
-// cadence tightens to LIVE_POLL_SECONDS (default 90) so live scores flow.
+// cadence tightens to LIVE_POLL_SECONDS (default 60) so live scores flow.
 
 export async function register() {
   if (process.env.NEXT_RUNTIME !== "nodejs") return;
@@ -12,7 +12,7 @@ export async function register() {
   const { runSync } = await import("./lib/results");
   const { fdToken } = await import("./lib/footballdata");
   const minutes = Number(process.env.RESULTS_POLL_MINUTES ?? 20);
-  const liveSeconds = Number(process.env.LIVE_POLL_SECONDS ?? 90);
+  const liveSeconds = Number(process.env.LIVE_POLL_SECONDS ?? 60);
   const idleMs = Math.max(1, minutes) * 60_000;
   const liveMs = Math.max(30, liveSeconds) * 1000;
 
