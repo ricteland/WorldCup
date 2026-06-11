@@ -253,5 +253,31 @@ console.log("10. per-match lock");
   check("predictions allowed again outside lock window", allowed.status === 200);
 }
 
+console.log("11. admin deletes a player");
+{
+  // a second throwaway account, then the admin removes it (duplicate-account case)
+  const dupe = client();
+  const dupeName = `${name}-dupe`;
+  const joined = await dupe.req("POST", "/api/join", { code: "VAMOS2026", displayName: dupeName });
+  check("second account joins", joined.status === 200);
+  await dupe.req("POST", "/api/predictions", { matchId: 75, homeScore: 1, awayScore: 0 });
+
+  const playerId = joined.json?.playerId
+    ?? (await dupe.req("GET", "/api/me")).json?.playerId;
+  const notAdmin = await player.req("DELETE", "/api/admin/player", { playerId });
+  check("non-admin blocked from deleting players", notAdmin.status === 403);
+
+  const del = await admin.req("DELETE", "/api/admin/player", { playerId });
+  check("admin deletes the duplicate account", del.status === 200, JSON.stringify(del.json));
+  const gone = await dupe.req("GET", "/api/me");
+  check("deleted player's session is dead", gone.status === 401);
+  const lb = await player.req("GET", "/api/leaderboard");
+  check("deleted player off the leaderboard", !lb.json?.rows?.some((r) => r.displayName === dupeName));
+
+  const adminId = (await admin.req("GET", "/api/me")).json?.playerId;
+  const self = await admin.req("DELETE", "/api/admin/player", { playerId: adminId });
+  check("admin accounts can't be deleted", self.status === 400);
+}
+
 console.log(failures === 0 ? "\nALL SMOKE TESTS PASSED" : `\n${failures} FAILURES`);
 process.exit(failures === 0 ? 0 : 1);

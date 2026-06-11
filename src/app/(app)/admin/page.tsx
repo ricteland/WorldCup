@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { getCurrentPlayer } from "@/lib/session";
 import { getConfig, getSettingRows } from "@/lib/config";
 import { getCore } from "@/lib/data";
+import { prisma } from "@/lib/db";
 import { AdminView, type AdminMatchRow } from "@/components/AdminView";
 
 export const dynamic = "force-dynamic";
@@ -10,7 +11,15 @@ export default async function AdminPage() {
   const player = await getCurrentPlayer();
   if (!player?.isAdmin) redirect("/matches");
 
-  const [core, cfg, rows] = await Promise.all([getCore(), getConfig(), getSettingRows()]);
+  const [core, cfg, rows, playerRows] = await Promise.all([
+    getCore(),
+    getConfig(),
+    getSettingRows(),
+    prisma.player.findMany({
+      orderBy: { createdAt: "asc" },
+      include: { _count: { select: { predictions: true } } },
+    }),
+  ]);
 
   const matches: AdminMatchRow[] = core.matches.map((m) => {
     const homeName = m.homeTeamId
@@ -47,6 +56,13 @@ export default async function AdminPage() {
     <AdminView
       data={{
         matches,
+        players: playerRows.map((p) => ({
+          id: p.id,
+          displayName: p.displayName,
+          isAdmin: p.isAdmin,
+          createdAt: p.createdAt.toISOString(),
+          predictions: p._count.predictions,
+        })),
         settings: {
           leagueCode: cfg.leagueCode,
           lockMinutes: String(cfg.lockMinutes),

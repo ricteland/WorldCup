@@ -105,17 +105,17 @@ export interface LeaderboardRow {
   bracketPoints: number;
   total: number;
   rank: number;
-  isAdmin: boolean;
 }
 
 /**
  * Ranked league (PLAN.MD §9.4): total points desc; players level on points are
- * ordered randomly (explicitly no tiebreaker).
+ * ordered randomly (explicitly no tiebreaker). The admin account is a control
+ * panel, not a contestant — it stays off the board.
  */
 export async function getLeaderboard(): Promise<LeaderboardRow[]> {
   const [core, players, allPreds, cfg] = await Promise.all([
     getCore(),
-    prisma.player.findMany(),
+    prisma.player.findMany({ where: { isAdmin: false } }),
     prisma.scorePred.findMany(),
     getConfig(),
   ]);
@@ -157,7 +157,6 @@ export async function getLeaderboard(): Promise<LeaderboardRow[]> {
       bracketPoints: bracketPts.total,
       total: matchPts.total + bracketPts.total,
       rank: 0,
-      isAdmin: pl.isAdmin,
     };
   });
 

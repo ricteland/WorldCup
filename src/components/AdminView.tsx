@@ -4,7 +4,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { RefreshCw, Save } from "lucide-react";
+import { RefreshCw, Save, Trash2 } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { Button, Card, Chip, Input } from "./ui";
 import { LocalTime } from "./LocalTime";
@@ -23,8 +23,17 @@ export interface AdminMatchRow {
   awayName: string;
 }
 
+export interface AdminPlayerRow {
+  id: string;
+  displayName: string;
+  isAdmin: boolean;
+  createdAt: string;
+  predictions: number;
+}
+
 export interface AdminData {
   matches: AdminMatchRow[];
+  players: AdminPlayerRow[];
   settings: { leagueCode: string; lockMinutes: string; scoring: string };
   lastSync: { ok: boolean; ranAt: string; updated: number; finished: number; error?: string } | null;
 }
@@ -117,6 +126,77 @@ function MatchRow({ m }: { m: AdminMatchRow }) {
         </select>
       )}
       {msg && <p className={cn("text-xs", msg === "Saved" ? "text-pitch-400" : "text-red-400")}>{msg}</p>}
+    </div>
+  );
+}
+
+function PlayerRow({ p }: { p: AdminPlayerRow }) {
+  const router = useRouter();
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function remove() {
+    setBusy(true);
+    setError(null);
+    const res = await fetch("/api/admin/player", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ playerId: p.id }),
+    });
+    setBusy(false);
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      setError(body.error ?? "Failed");
+      setConfirming(false);
+      return;
+    }
+    router.refresh();
+  }
+
+  return (
+    <div className="flex items-center gap-2 rounded-xl bg-white/[0.03] px-3 py-2 ring-1 ring-white/5">
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-1.5">
+          <span className="truncate text-sm font-semibold text-slate-200">{p.displayName}</span>
+          {p.isAdmin && <Chip className="bg-gold-400/10 text-gold-300">admin</Chip>}
+        </div>
+        <div className="text-[11px] text-slate-500">
+          joined <LocalTime iso={p.createdAt} mode="date" /> · {p.predictions} prediction
+          {p.predictions === 1 ? "" : "s"}
+        </div>
+        {error && <p className="text-[11px] text-red-400">{error}</p>}
+      </div>
+      {!p.isAdmin &&
+        (confirming ? (
+          <span className="flex shrink-0 items-center gap-1.5">
+            <Button
+              variant="ghost"
+              className="px-2.5 py-1.5 text-xs text-red-300 ring-1 ring-red-500/40"
+              disabled={busy}
+              onClick={remove}
+            >
+              {busy ? "Deleting…" : "Confirm delete"}
+            </Button>
+            <Button
+              variant="ghost"
+              className="px-2.5 py-1.5 text-xs"
+              disabled={busy}
+              onClick={() => setConfirming(false)}
+            >
+              Cancel
+            </Button>
+          </span>
+        ) : (
+          <Button
+            variant="ghost"
+            className="shrink-0 px-2.5 py-1.5 text-xs text-slate-400 hover:text-red-300"
+            onClick={() => setConfirming(true)}
+            aria-label={`Delete ${p.displayName}`}
+          >
+            <Trash2 size={13} />
+          </Button>
+        ))}
     </div>
   );
 }
@@ -217,6 +297,20 @@ export function AdminView({ data }: { data: AdminData }) {
             Save settings
           </Button>
         </form>
+      </Card>
+
+      <Card className="space-y-2 p-4">
+        <h2 className="text-sm font-semibold text-slate-200">
+          Players <span className="text-xs font-normal text-slate-500">({data.players.length})</span>
+        </h2>
+        <p className="text-xs text-slate-500">
+          Deleting a player removes their predictions and points permanently.
+        </p>
+        <div className="max-h-72 space-y-2 overflow-y-auto">
+          {data.players.map((p) => (
+            <PlayerRow key={p.id} p={p} />
+          ))}
+        </div>
       </Card>
 
       <Card className="space-y-2 p-4">
