@@ -107,7 +107,15 @@ export function fdToken(): string | undefined {
 const FD_MATCHES_URL = "https://api.football-data.org/v4/competitions/WC/matches";
 
 export async function fetchFdUpdates(token: string): Promise<FdUpdate[]> {
-  const res = await fetch(FD_MATCHES_URL, {
+  // Always request a date window: the unfiltered season endpoint serves a
+  // stale cached snapshot for this 104-match competition (observed on WC26
+  // matchday 1 — a match IN_PLAY 2-0 on the filtered endpoint was still TIMED
+  // with no score unfiltered, so live scores never flowed). A few days back
+  // covers fast full-time results, a week ahead covers newly announced
+  // knockout matchups; FD caps ranges at 10 days.
+  const day = (offset: number) =>
+    new Date(Date.now() + offset * 86_400_000).toISOString().slice(0, 10);
+  const res = await fetch(`${FD_MATCHES_URL}?dateFrom=${day(-2)}&dateTo=${day(7)}`, {
     headers: { "X-Auth-Token": token },
     cache: "no-store",
     signal: AbortSignal.timeout(15_000),
