@@ -53,12 +53,22 @@ console.log("1. join flow");
 
 console.log("2. matches payload");
 let matches;
+// matches already finished/locked before this run (dirty dev DB) can't be
+// predicted — expected counts below shrink accordingly
+let unplayable = { group: 0, ko: 0 };
 {
   const res = await player.req("GET", "/api/matches");
   matches = res.json?.matches;
   check("104 matches", matches?.length === 104);
-  check("not locked", res.json?.locked === false, `lockAt=${res.json?.lockAt}`);
+  check("lock window present", Number.isFinite(res.json?.lockMinutes), `lockMinutes=${res.json?.lockMinutes}`);
+  check("per-match lock time present", typeof matches?.[0]?.lockAtUtc === "string");
   check("KO matches closed before group preds", matches?.find((m) => m.id === 73)?.open === false);
+  for (const m of matches) {
+    if (m.status === "FINISHED" || m.locked) unplayable[m.stage === "GROUP" ? "group" : "ko"]++;
+  }
+  if (unplayable.group + unplayable.ko > 0) {
+    console.log(`  (${unplayable.group + unplayable.ko} match(es) already finished/locked in this DB)`);
+  }
 }
 
 console.log("3. group predictions (all 72)");
@@ -72,7 +82,7 @@ console.log("3. group predictions (all 72)");
     });
     if (res.status === 200) okCount++;
   }
-  check("72 group predictions saved", okCount === 72, `got ${okCount}`);
+  check("72 group predictions saved", okCount === 72 - unplayable.group, `got ${okCount}`);
 }
 
 console.log("4. cascade seeds the bracket");
@@ -121,7 +131,7 @@ console.log("5. knockout predictions (incl. draw + winner)");
     const res = await player.req("POST", "/api/predictions", { matchId: num, homeScore: 2, awayScore: 0 });
     if (res.status === 200) okCount++;
   }
-  check("all 32 KO predictions saved", okCount === 32, `got ${okCount}`);
+  check("all 32 KO predictions saved", okCount === 32 - unplayable.ko, `got ${okCount}`);
 
   const done = await player.req("GET", "/api/bracket");
   check("champion derived", !!done.json.slots["CHAMPION"]);
@@ -132,7 +142,8 @@ console.log("5. knockout predictions (incl. draw + winner)");
 console.log("6. me + leaderboard before results");
 {
   const me = await player.req("GET", "/api/me");
-  check("104 predictions made", me.json?.predictionsMade === 104, `got ${me.json?.predictionsMade}`);
+  const expected = 104 - unplayable.group - unplayable.ko;
+  check(`${expected} predictions made`, me.json?.predictionsMade === expected, `got ${me.json?.predictionsMade}`);
   check("0 points before results", me.json?.total === 0);
 }
 
@@ -178,15 +189,16 @@ console.log("8. stale knockout detection");
   check("downstream KO picks flagged stale", b.json.staleMatchNums.length > 0, `stale=${b.json.staleMatchNums}`);
 }
 
-console.log("9. global lock");
+console.log("9. per-match lock");
 {
-  const lock = await admin.req("POST", "/api/admin/settings", { lockAt: "2020-01-01T00:00:00Z" });
-  check("admin can set lock time", lock.status === 200);
+  // a huge lock window puts every match past its rolling deadline
+  const lock = await admin.req("POST", "/api/admin/settings", { lockMinutes: "100000000" });
+  check("admin can set lock window", lock.status === 200);
   const denied = await player.req("POST", "/api/predictions", { matchId: 2, homeScore: 1, awayScore: 0 });
-  check("predictions rejected after lock", denied.status === 423);
-  await admin.req("POST", "/api/admin/settings", { lockAt: "2026-06-11T18:30:00Z" });
+  check("predictions rejected inside lock window", denied.status === 423);
+  await admin.req("POST", "/api/admin/settings", { lockMinutes: "30" });
   const allowed = await player.req("POST", "/api/predictions", { matchId: 2, homeScore: 1, awayScore: 0 });
-  check("predictions allowed again after unlock", allowed.status === 200);
+  check("predictions allowed again outside lock window", allowed.status === 200);
 }
 
 console.log(failures === 0 ? "\nALL SMOKE TESTS PASSED" : `\n${failures} FAILURES`);

@@ -2,7 +2,7 @@ import { getCurrentPlayer } from "@/lib/session";
 import { getConfig } from "@/lib/config";
 import { prisma } from "@/lib/db";
 import { getCore, derivePlayer, getRealProgress } from "@/lib/data";
-import { computeBracketPoints, computeMatchPoints } from "@/lib/scoring";
+import { boostTeamId, computeBracketPoints, computeMatchPoints } from "@/lib/scoring";
 import { ProfileView } from "@/components/ProfileView";
 
 export const dynamic = "force-dynamic";
@@ -17,7 +17,12 @@ export default async function ProfilePage() {
   const scoreMap = new Map(
     preds.map((p) => [p.matchId, { homeScore: p.homeScore, awayScore: p.awayScore }])
   );
-  const matchPts = computeMatchPoints(scoreMap, core.matches, cfg.scoring);
+  const matchPts = computeMatchPoints(
+    scoreMap,
+    core.matches,
+    cfg.scoring,
+    boostTeamId(cfg.scoring, core.teams)
+  );
   const [derived, progress] = await Promise.all([
     derivePlayer(player.id, core),
     getRealProgress(core),

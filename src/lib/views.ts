@@ -2,10 +2,10 @@
 // API routes. Everything is plain JSON, ready to hand to client components.
 
 import { prisma } from "./db";
-import { getConfig } from "./config";
+import { getConfig, isMatchLocked, matchLockAt } from "./config";
 import { getCore, derivePlayer, getRealProgress } from "./data";
 import { gradeScore, type Grade } from "./grade";
-import { gradeBracketSlot, matchPointsFor } from "./scoring";
+import { boostTeamId, gradeBracketSlot, matchInvolves, matchPointsFor } from "./scoring";
 import { computeTable } from "./standings";
 import { slotKey, roundOfMatch, CHAMPION_SLOT, KO_MATCH_NUMS } from "./bracket";
 import type { Team } from "@prisma/client";
@@ -51,13 +51,16 @@ export interface MatchView {
   pred: { homeScore: number; awayScore: number; predWinnerTeamId: string | null } | null;
   grade: Grade;
   points: number;
-  open: boolean; // can be predicted right now (ignoring the global lock)
+  /** Points multiplier when the boosted team (Spain) plays in this match, else null. */
+  boost: number | null;
+  locked: boolean; // this match's own rolling deadline has passed
+  lockAtUtc: string; // when this match freezes (lockMinutes before kickoff)
+  open: boolean; // can be predicted right now (ignoring the lock)
   stale: boolean; // knockout pred made against participants the cascade no longer produces
 }
 
 export interface MatchesPayload {
-  locked: boolean;
-  lockAt: string;
+  lockMinutes: number;
   matches: MatchView[];
 }
 
@@ -71,6 +74,7 @@ export async function getMatchesView(playerId: string): Promise<MatchesPayload> 
   const predByMatch = new Map(preds.map((p) => [p.matchId, p]));
   const stale = new Set(derived.staleMatchNums);
   const open = new Set(derived.openMatchNums);
+  const boostedId = boostTeamId(cfg.scoring, core.teams);
 
   const matches = core.matches.map((m): MatchView => {
     const pred = predByMatch.get(m.id);
@@ -101,13 +105,16 @@ export async function getMatchesView(playerId: string): Promise<MatchesPayload> 
         ? { homeScore: pred.homeScore, awayScore: pred.awayScore, predWinnerTeamId: pred.predWinnerTeamId }
         : null,
       grade,
-      points: matchPointsFor(grade, cfg.scoring),
+      points: matchPointsFor(grade, cfg.scoring, matchInvolves(m, boostedId)),
+      boost: matchInvolves(m, boostedId) ? cfg.scoring.boostMultiplier : null,
+      locked: isMatchLocked(m.kickoffUtc, cfg.lockMinutes),
+      lockAtUtc: matchLockAt(m.kickoffUtc, cfg.lockMinutes).toISOString(),
       open: isGroup || open.has(m.id),
       stale: stale.has(m.id),
     };
   });
 
-  return { locked: Date.now() >= cfg.lockAt.getTime(), lockAt: cfg.lockAt.toISOString(), matches };
+  return { lockMinutes: cfg.lockMinutes, matches };
 }
 
 // ---------------------------------------------------------------------------
@@ -249,6 +256,8 @@ export interface BracketMatchView {
   home: BracketSideView;
   away: BracketSideView;
   pred: { homeScore: number; awayScore: number; predWinnerTeamId: string | null } | null;
+  locked: boolean;
+  lockAtUtc: string;
   open: boolean;
   stale: boolean;
   realHome: TeamView | null;
@@ -276,10 +285,11 @@ const ROUND_TITLES: Record<string, string> = {
 
 export async function getBracketView(playerId: string): Promise<BracketPayload> {
   const core = await getCore();
-  const [derived, progress, preds] = await Promise.all([
+  const [derived, progress, preds, cfg] = await Promise.all([
     derivePlayer(playerId, core),
     getRealProgress(core),
     prisma.scorePred.findMany({ where: { playerId, matchId: { gte: 73 } } }),
+    getConfig(),
   ]);
   const predByMatch = new Map(preds.map((p) => [p.matchId, p]));
   const stale = new Set(derived.staleMatchNums);
@@ -313,6 +323,8 @@ export async function getBracketView(playerId: string): Promise<BracketPayload> 
         pred: p
           ? { homeScore: p.homeScore, awayScore: p.awayScore, predWinnerTeamId: p.predWinnerTeamId }
           : null,
+        locked: isMatchLocked(db.kickoffUtc, cfg.lockMinutes),
+        lockAtUtc: matchLockAt(db.kickoffUtc, cfg.lockMinutes).toISOString(),
         open: open.has(num),
         stale: stale.has(num),
         realHome: teamView(db.homeTeamId ? core.teamById.get(db.homeTeamId) : null),

@@ -12,7 +12,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const cfg = await getConfig();
 
   return (
-    <WelcomeProvider lockAt={cfg.lockAt.toISOString()} scoring={cfg.scoring}>
+    <WelcomeProvider lockMinutes={cfg.lockMinutes} scoring={cfg.scoring}>
       <PwaRegister />
       <TopBar isAdmin={player.isAdmin} />
       <main className="mx-auto w-full max-w-lg flex-1 px-3 pb-28 pt-4">{children}</main>

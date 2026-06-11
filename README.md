@@ -22,8 +22,8 @@ Prisma/SQLite, self-hosted with Docker + Caddy (automatic HTTPS).
    own **Round of 32** using the official pairing map.
 3. They predict each knockout match round by round (a drawn score requires picking
    who goes through) all the way to a champion.
-4. **Everything locks at once** at `PREDICTION_LOCK_AT` (default 30 min before the
-   opener). No edits after that.
+4. **Rolling deadlines**: each match locks `PREDICTION_LOCK_MINUTES` before its own
+   kickoff (default 30 min). Everything else stays editable all tournament long.
 5. Results are polled from [openfootball/worldcup.json](https://github.com/openfootball/worldcup.json)
    (free, public domain, **no API key**) every 20 minutes; an admin can override any
    score by hand. Scoring (configurable live from the Admin screen):

@@ -25,7 +25,7 @@ export interface AdminMatchRow {
 
 export interface AdminData {
   matches: AdminMatchRow[];
-  settings: { leagueCode: string; lockAt: string; scoring: string };
+  settings: { leagueCode: string; lockMinutes: string; scoring: string };
   lastSync: { ok: boolean; ranAt: string; updated: number; finished: number; error?: string } | null;
 }
 
@@ -193,11 +193,11 @@ export function AdminView({ data }: { data: AdminData }) {
             />
           </label>
           <label className="block text-xs text-slate-400">
-            Lock time (ISO, UTC)
+            Lock window (minutes before each kickoff)
             <Input
               className="mt-1"
-              value={settings.lockAt}
-              onChange={(e) => setSettings({ ...settings, lockAt: e.target.value })}
+              value={settings.lockMinutes}
+              onChange={(e) => setSettings({ ...settings, lockMinutes: e.target.value })}
             />
           </label>
           <label className="block text-xs text-slate-400">

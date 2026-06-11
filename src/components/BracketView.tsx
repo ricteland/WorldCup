@@ -75,12 +75,15 @@ function toMatchView(m: BracketMatchView): MatchView {
     pred: m.pred,
     grade: "PENDING",
     points: 0,
+    boost: null,
+    locked: m.locked,
+    lockAtUtc: m.lockAtUtc,
     open: m.open,
     stale: m.stale,
   };
 }
 
-function BracketCard({ match, locked }: { match: BracketMatchView; locked: boolean }) {
+function BracketCard({ match }: { match: BracketMatchView }) {
   const [editing, setEditing] = useState(false);
   const winnerId =
     match.pred &&
@@ -89,7 +92,7 @@ function BracketCard({ match, locked }: { match: BracketMatchView; locked: boole
       : match.pred.awayScore > match.pred.homeScore
         ? match.away.team?.id
         : match.pred.predWinnerTeamId);
-  const canEdit = !locked && match.open && match.realStatus !== "FINISHED";
+  const canEdit = !match.locked && match.open && match.realStatus !== "FINISHED";
   const finished = match.realStatus === "FINISHED";
 
   return (
@@ -140,14 +143,14 @@ function BracketCard({ match, locked }: { match: BracketMatchView; locked: boole
 
       {editing && canEdit && (
         <div className="mt-2 border-t border-white/5">
-          <MatchEditor match={toMatchView(match)} locked={locked} onSaved={() => setEditing(false)} compact />
+          <MatchEditor match={toMatchView(match)} onSaved={() => setEditing(false)} compact />
         </div>
       )}
     </div>
   );
 }
 
-export function BracketView({ payload, locked }: { payload: BracketPayload; locked: boolean }) {
+export function BracketView({ payload }: { payload: BracketPayload }) {
   const [round, setRound] = useState("R32");
   const current = payload.rounds.find((r) => r.round === round)!;
 
@@ -213,7 +216,7 @@ export function BracketView({ payload, locked }: { payload: BracketPayload; lock
 
       <div className="no-scrollbar -mx-3 flex flex-wrap justify-center gap-2 overflow-x-auto px-3 pb-2">
         {current.matches.map((m) => (
-          <BracketCard key={m.num} match={m} locked={locked} />
+          <BracketCard key={m.num} match={m} />
         ))}
       </div>
     </div>

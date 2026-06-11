@@ -1,21 +1,18 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { isLocked } from "@/lib/config";
+import { getConfig, isMatchLocked } from "@/lib/config";
 import { getCurrentPlayer } from "@/lib/session";
 import { getCore, derivePlayer, persistBracketPicks } from "@/lib/data";
 import { slotKey } from "@/lib/bracket";
 
 // POST /api/predictions { matchId, homeScore, awayScore, predWinnerTeamId? }
-// One endpoint for all 104 matches. Knockout predictions are validated against
-// the player's own cascade (participants must be derivable; draws need a
-// winner pick) and re-derive the persisted bracket (PLAN.MD §7).
+// One endpoint for all 104 matches. Each match locks on its own rolling
+// deadline (lockMinutes before kickoff). Knockout predictions are validated
+// against the player's own cascade (participants must be derivable; draws need
+// a winner pick) and re-derive the persisted bracket (PLAN.MD §7).
 export async function POST(req: Request) {
   const player = await getCurrentPlayer();
   if (!player) return NextResponse.json({ error: "Not signed in" }, { status: 401 });
-
-  if (await isLocked()) {
-    return NextResponse.json({ error: "Predictions are locked" }, { status: 423 });
-  }
 
   let body: { matchId?: number; homeScore?: number; awayScore?: number; predWinnerTeamId?: string };
   try {
@@ -32,6 +29,19 @@ export async function POST(req: Request) {
 
   const match = await prisma.match.findUnique({ where: { id: matchId! } });
   if (!match) return NextResponse.json({ error: "Unknown match" }, { status: 404 });
+
+  // a finished match is locked regardless of its kickoff-based deadline
+  // (admin overrides and fast result syncs can finish a match early)
+  if (match.status === "FINISHED") {
+    return NextResponse.json({ error: "This match has already been played" }, { status: 423 });
+  }
+  const cfg = await getConfig();
+  if (isMatchLocked(match.kickoffUtc, cfg.lockMinutes)) {
+    return NextResponse.json(
+      { error: `This match is locked (predictions close ${cfg.lockMinutes} min before kickoff)` },
+      { status: 423 }
+    );
+  }
 
   let snapHome: string | null = null;
   let snapAway: string | null = null;

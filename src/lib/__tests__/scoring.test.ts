@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  boostTeamId,
   computeBracketPoints,
   computeMatchPoints,
   computeRealProgress,
@@ -16,6 +17,29 @@ describe("matchPointsFor", () => {
     expect(matchPointsFor("RESULT", DEFAULT_SCORING)).toBe(2);
     expect(matchPointsFor("WRONG", DEFAULT_SCORING)).toBe(0);
     expect(matchPointsFor("PENDING", DEFAULT_SCORING)).toBe(0);
+  });
+
+  it("multiplies points for boosted matches (×3 by default)", () => {
+    expect(matchPointsFor("EXACT", DEFAULT_SCORING, true)).toBe(15);
+    expect(matchPointsFor("RESULT", DEFAULT_SCORING, true)).toBe(6);
+    expect(matchPointsFor("WRONG", DEFAULT_SCORING, true)).toBe(0);
+  });
+});
+
+describe("boostTeamId", () => {
+  const teams = [
+    { id: "cuid-esp", code: "ESP" },
+    { id: "cuid-arg", code: "ARG" },
+  ];
+
+  it("resolves the boosted team by code (Spain by default)", () => {
+    expect(boostTeamId(DEFAULT_SCORING, teams)).toBe("cuid-esp");
+  });
+
+  it("returns null when disabled or the team is unknown", () => {
+    expect(boostTeamId({ ...DEFAULT_SCORING, boostTeamCode: null }, teams)).toBeNull();
+    expect(boostTeamId({ ...DEFAULT_SCORING, boostMultiplier: 1 }, teams)).toBeNull();
+    expect(boostTeamId({ ...DEFAULT_SCORING, boostTeamCode: "XXX" }, teams)).toBeNull();
   });
 });
 
@@ -37,6 +61,17 @@ describe("computeMatchPoints", () => {
     expect(graded.get(1)).toBe("EXACT");
     expect(graded.get(2)).toBe("RESULT");
     expect(graded.has(3)).toBe(false);
+  });
+
+  it("triples points only for matches involving the boosted team", () => {
+    const preds = new Map([
+      [1, { homeScore: 2, awayScore: 1 }], // exact, involves x: 5 × 3
+      [2, { homeScore: 1, awayScore: 1 }], // result, involves x: 2 × 3
+    ]);
+    const { total } = computeMatchPoints(preds, matches, DEFAULT_SCORING, "x");
+    expect(total).toBe(21);
+    // boosted team not playing in either match → plain points
+    expect(computeMatchPoints(preds, matches, DEFAULT_SCORING, "q").total).toBe(7);
   });
 });
 

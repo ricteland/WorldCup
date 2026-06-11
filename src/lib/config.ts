@@ -5,7 +5,8 @@ import { DEFAULT_SCORING, type ScoringConfig } from "./scoring";
 
 export interface AppConfig {
   leagueCode: string;
-  lockAt: Date;
+  /** Each match locks this many minutes before its own kickoff. */
+  lockMinutes: number;
   scoring: ScoringConfig;
   appUrl: string;
   openfootballUrl: string;
@@ -14,8 +15,7 @@ export interface AppConfig {
 
 const DEFAULTS = {
   leagueCode: "VAMOS2026",
-  // 30 minutes before the opener (Mexico v South Africa, 19:00 UTC).
-  lockAt: "2026-06-11T18:30:00Z",
+  lockMinutes: 30,
   appUrl: "http://localhost:3000",
   openfootballUrl:
     "https://raw.githubusercontent.com/openfootball/worldcup.json/master/2026/worldcup.json",
@@ -37,9 +37,12 @@ export async function getConfig(): Promise<AppConfig> {
       // keep defaults on malformed JSON
     }
   }
+  const lockMinutes = Number(
+    s.lockMinutes ?? process.env.PREDICTION_LOCK_MINUTES ?? DEFAULTS.lockMinutes
+  );
   return {
     leagueCode: s.leagueCode ?? process.env.LEAGUE_CODE ?? DEFAULTS.leagueCode,
-    lockAt: new Date(s.lockAt ?? process.env.PREDICTION_LOCK_AT ?? DEFAULTS.lockAt),
+    lockMinutes: Number.isFinite(lockMinutes) && lockMinutes >= 0 ? lockMinutes : DEFAULTS.lockMinutes,
     scoring,
     appUrl: process.env.APP_URL ?? DEFAULTS.appUrl,
     openfootballUrl: process.env.OPENFOOTBALL_URL ?? DEFAULTS.openfootballUrl,
@@ -47,7 +50,11 @@ export async function getConfig(): Promise<AppConfig> {
   };
 }
 
-export async function isLocked(): Promise<boolean> {
-  const { lockAt } = await getConfig();
-  return Date.now() >= lockAt.getTime();
+/** When predictions for a match freeze: lockMinutes before its kickoff. */
+export function matchLockAt(kickoffUtc: Date, lockMinutes: number): Date {
+  return new Date(kickoffUtc.getTime() - lockMinutes * 60_000);
+}
+
+export function isMatchLocked(kickoffUtc: Date, lockMinutes: number): boolean {
+  return Date.now() >= matchLockAt(kickoffUtc, lockMinutes).getTime();
 }

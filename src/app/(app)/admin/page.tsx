@@ -49,7 +49,7 @@ export default async function AdminPage() {
         matches,
         settings: {
           leagueCode: cfg.leagueCode,
-          lockAt: cfg.lockAt.toISOString(),
+          lockMinutes: String(cfg.lockMinutes),
           scoring: JSON.stringify(cfg.scoring),
         },
         lastSync,

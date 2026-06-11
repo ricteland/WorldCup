@@ -10,6 +10,7 @@ import {
   type KoScoreEntry,
 } from "./bracket";
 import {
+  boostTeamId,
   computeBracketPoints,
   computeMatchPoints,
   computeRealProgress,
@@ -130,6 +131,7 @@ export async function getLeaderboard(): Promise<LeaderboardRow[]> {
     getConfig(),
   ]);
   const progress = await getRealProgress(core);
+  const boostedId = boostTeamId(cfg.scoring, core.teams);
   const predsByPlayer = new Map<string, ScorePred[]>();
   for (const p of allPreds) {
     let list = predsByPlayer.get(p.playerId);
@@ -144,7 +146,7 @@ export async function getLeaderboard(): Promise<LeaderboardRow[]> {
       ...groupScores,
       ...new Map([...koScores].map(([k, v]) => [k, { homeScore: v.homeScore, awayScore: v.awayScore }])),
     ]);
-    const matchPts = computeMatchPoints(scoreMap, core.matches, cfg.scoring);
+    const matchPts = computeMatchPoints(scoreMap, core.matches, cfg.scoring, boostedId);
     const derived = deriveBracket({
       groupMatches: core.groupMatches,
       teamsByGroup: core.teamsByGroup,

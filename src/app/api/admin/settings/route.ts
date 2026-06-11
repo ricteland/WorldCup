@@ -3,9 +3,9 @@ import { prisma } from "@/lib/db";
 import { requireAdmin } from "@/lib/session";
 
 // POST /api/admin/settings — update [CONFIG] values live (league code, lock
-// time, scoring weights). Stored as Setting rows, which take precedence over
+// window, scoring weights). Stored as Setting rows, which take precedence over
 // env vars.
-const EDITABLE = new Set(["leagueCode", "lockAt", "scoring"]);
+const EDITABLE = new Set(["leagueCode", "lockMinutes", "scoring"]);
 
 export async function POST(req: Request) {
   try {
@@ -25,8 +25,11 @@ export async function POST(req: Request) {
     if (!EDITABLE.has(key)) {
       return NextResponse.json({ error: `Unknown setting: ${key}` }, { status: 400 });
     }
-    if (key === "lockAt" && Number.isNaN(Date.parse(value))) {
-      return NextResponse.json({ error: "lockAt must be an ISO date-time" }, { status: 400 });
+    if (key === "lockMinutes" && (!/^\d+$/.test(value) || Number(value) < 0)) {
+      return NextResponse.json(
+        { error: "lockMinutes must be a whole number of minutes" },
+        { status: 400 }
+      );
     }
     if (key === "scoring") {
       try {

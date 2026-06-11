@@ -87,12 +87,10 @@ function Stepper({
 
 export function MatchEditor({
   match,
-  locked,
   onSaved,
   compact,
 }: {
   match: MatchView;
-  locked: boolean;
   onSaved?: () => void;
   compact?: boolean;
 }) {
@@ -138,7 +136,7 @@ export function MatchEditor({
     router.refresh();
   }
 
-  if (locked) {
+  if (match.locked) {
     return (
       <div className="flex items-center justify-center gap-2 py-2 text-xs text-slate-500">
         <LockKeyhole size={14} /> Locked
@@ -148,6 +146,9 @@ export function MatchEditor({
 
   return (
     <div className={cn("space-y-3", !compact && "pt-3")}>
+      <div className="flex justify-center">
+        <LockCountdown lockAt={match.lockAtUtc} />
+      </div>
       <div className="flex items-center justify-center gap-4">
         <Stepper value={home} onChange={setHome} />
         <span className="text-lg font-bold text-slate-600">:</span>
@@ -192,7 +193,7 @@ export function MatchEditor({
   );
 }
 
-function MatchCard({ match, locked }: { match: MatchView; locked: boolean }) {
+function MatchCard({ match }: { match: MatchView }) {
   const [openEditor, setOpenEditor] = useState(false);
   const isKo = match.stage !== "GROUP";
   // prefer reality once knockout participants are official
@@ -201,7 +202,7 @@ function MatchCard({ match, locked }: { match: MatchView; locked: boolean }) {
   const finished = match.status === "FINISHED";
   const liveScore =
     match.status === "LIVE" && match.homeScore != null && match.awayScore != null;
-  const canEdit = !locked && match.open && !finished;
+  const canEdit = !match.locked && match.open && !finished;
 
   return (
     <div
@@ -216,6 +217,11 @@ function MatchCard({ match, locked }: { match: MatchView; locked: boolean }) {
           <Chip className="bg-white/5 text-slate-400">
             {match.stage === "GROUP" ? `Group ${match.groupName}` : STAGE_LABEL[match.stage]}
           </Chip>
+          {match.boost && (
+            <Chip className="bg-gradient-to-r from-red-500/15 to-gold-400/15 font-semibold text-gold-300 ring-1 ring-gold-400/40">
+              🇪🇸 VAMOS BONUS ×{match.boost}
+            </Chip>
+          )}
           {match.status === "LIVE" && (
             <Chip className="bg-red-500/15 text-red-300 ring-1 ring-red-500/30">● LIVE</Chip>
           )}
@@ -286,9 +292,7 @@ function MatchCard({ match, locked }: { match: MatchView; locked: boolean }) {
         </p>
       )}
 
-      {openEditor && canEdit && (
-        <MatchEditor match={match} locked={locked} onSaved={() => setOpenEditor(false)} />
-      )}
+      {openEditor && canEdit && <MatchEditor match={match} onSaved={() => setOpenEditor(false)} />}
     </div>
   );
 }
@@ -353,7 +357,9 @@ export function MatchList({ payload }: { payload: MatchesPayload }) {
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-2">
         <h1 className="font-display text-2xl font-bold text-slate-100">Matches</h1>
-        <LockCountdown lockAt={payload.lockAt} />
+        <Chip className="bg-white/5 text-slate-400">
+          <LockKeyhole size={11} /> locks {payload.lockMinutes} min before kickoff
+        </Chip>
       </div>
 
       {todayCount > 0 && (
@@ -400,7 +406,7 @@ export function MatchList({ payload }: { payload: MatchesPayload }) {
           </h2>
           <div className="space-y-2">
             {matches.map((m) => (
-              <MatchCard key={m.id} match={m} locked={payload.locked} />
+              <MatchCard key={m.id} match={m} />
             ))}
           </div>
         </section>

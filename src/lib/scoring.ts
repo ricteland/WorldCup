@@ -19,18 +19,38 @@ export interface ScoringConfig {
   exact: number;
   result: number;
   bracket: Record<ScoringRound, number>;
+  /** Match points are multiplied when this team plays (the league is Spanish). */
+  boostTeamCode: string | null;
+  boostMultiplier: number;
 }
 
 export const DEFAULT_SCORING: ScoringConfig = {
   exact: 5,
   result: 2,
   bracket: { R32: 1, R16: 2, QF: 4, SF: 6, FINAL: 8, CHAMPION: 12 },
+  boostTeamCode: "ESP",
+  boostMultiplier: 3,
 };
 
-export function matchPointsFor(grade: Grade, cfg: ScoringConfig): number {
-  if (grade === "EXACT") return cfg.exact;
-  if (grade === "RESULT") return cfg.result;
-  return 0;
+export function matchPointsFor(grade: Grade, cfg: ScoringConfig, boosted = false): number {
+  const base = grade === "EXACT" ? cfg.exact : grade === "RESULT" ? cfg.result : 0;
+  return boosted ? base * cfg.boostMultiplier : base;
+}
+
+/** Resolve the boosted team's id (cuid) from its code, or null when disabled. */
+export function boostTeamId(
+  cfg: ScoringConfig,
+  teams: { id: string; code: string }[]
+): string | null {
+  if (!cfg.boostTeamCode || cfg.boostMultiplier === 1) return null;
+  return teams.find((t) => t.code === cfg.boostTeamCode)?.id ?? null;
+}
+
+export function matchInvolves(
+  m: { homeTeamId?: string | null; awayTeamId?: string | null },
+  teamId: string | null
+): boolean {
+  return teamId != null && (m.homeTeamId === teamId || m.awayTeamId === teamId);
 }
 
 // ---------------------------------------------------------------------------
@@ -217,7 +237,8 @@ export function computeBracketPoints(
 export function computeMatchPoints(
   preds: Map<number, { homeScore: number; awayScore: number }>,
   matches: RealMatch[],
-  cfg: ScoringConfig
+  cfg: ScoringConfig,
+  boostedTeamId: string | null = null
 ): { total: number; graded: Map<number, Grade> } {
   let total = 0;
   const graded = new Map<number, Grade>();
@@ -226,7 +247,7 @@ export function computeMatchPoints(
     const pred = preds.get(m.id);
     const g = gradeScore(pred, { homeScore: m.homeScore, awayScore: m.awayScore });
     graded.set(m.id, g);
-    total += matchPointsFor(g, cfg);
+    total += matchPointsFor(g, cfg, matchInvolves(m, boostedTeamId));
   }
   return { total, graded };
 }

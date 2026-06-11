@@ -6,7 +6,6 @@
 import { createContext, useContext, useState, useSyncExternalStore, type ReactNode } from "react";
 import { X } from "lucide-react";
 import { Button, Card, Chip } from "./ui";
-import { LockCountdown } from "./LockCountdown";
 
 const WelcomeCtx = createContext<{ open: () => void }>({ open: () => {} });
 export const useWelcome = () => useContext(WelcomeCtx);
@@ -15,12 +14,18 @@ const SEEN_KEY = "wc26:welcomed";
 const subscribeNever = () => () => {};
 
 export function WelcomeProvider({
-  lockAt,
+  lockMinutes,
   scoring,
   children,
 }: {
-  lockAt: string;
-  scoring: { exact: number; result: number; bracket: Record<string, number> };
+  lockMinutes: number;
+  scoring: {
+    exact: number;
+    result: number;
+    bracket: Record<string, number>;
+    boostTeamCode: string | null;
+    boostMultiplier: number;
+  };
   children: ReactNode;
 }) {
   // open on first visit (server snapshot: closed), unless the user has acted
@@ -81,6 +86,14 @@ export function WelcomeProvider({
                     <span className="font-display font-bold text-slate-500">0</span>
                   </li>
                 </ul>
+                {scoring.boostTeamCode && scoring.boostMultiplier !== 1 && (
+                  <p className="mt-1.5 rounded-lg bg-red-500/10 px-3 py-1.5 text-xs text-red-300 ring-1 ring-red-500/20">
+                    {scoring.boostTeamCode === "ESP" ? "🇪🇸 " : ""}
+                    <strong>×{scoring.boostMultiplier} bonus:</strong> match points are multiplied
+                    for every game involving{" "}
+                    {scoring.boostTeamCode === "ESP" ? "Spain" : scoring.boostTeamCode}. ¡Vamos!
+                  </p>
+                )}
               </div>
 
               <div>
@@ -113,12 +126,12 @@ export function WelcomeProvider({
               </div>
 
               <div className="rounded-xl bg-gold-400/5 p-3 ring-1 ring-gold-400/20">
-                <p className="mb-1.5 text-xs text-slate-300">
-                  <strong className="text-gold-300">One deadline for everything:</strong> all
-                  predictions lock 30 minutes before the opening match and can&apos;t be changed
-                  after that — no adjusting bets mid-tournament.
+                <p className="text-xs text-slate-300">
+                  <strong className="text-gold-300">Rolling deadlines:</strong> each match locks{" "}
+                  {lockMinutes} minutes before its own kickoff and can&apos;t be changed after
+                  that. Everything else stays open — you can keep predicting and tweaking
+                  upcoming matches all tournament long.
                 </p>
-                <LockCountdown lockAt={lockAt} />
               </div>
             </div>
 

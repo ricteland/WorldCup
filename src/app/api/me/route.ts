@@ -3,7 +3,7 @@ import { prisma } from "@/lib/db";
 import { getConfig } from "@/lib/config";
 import { getCurrentPlayer } from "@/lib/session";
 import { getCore, derivePlayer, getRealProgress } from "@/lib/data";
-import { computeBracketPoints, computeMatchPoints } from "@/lib/scoring";
+import { boostTeamId, computeBracketPoints, computeMatchPoints } from "@/lib/scoring";
 
 // GET /api/me — current player + points breakdown
 export async function GET() {
@@ -13,7 +13,12 @@ export async function GET() {
   const [core, cfg] = await Promise.all([getCore(), getConfig()]);
   const preds = await prisma.scorePred.findMany({ where: { playerId: player.id } });
   const scoreMap = new Map(preds.map((p) => [p.matchId, { homeScore: p.homeScore, awayScore: p.awayScore }]));
-  const matchPts = computeMatchPoints(scoreMap, core.matches, cfg.scoring);
+  const matchPts = computeMatchPoints(
+    scoreMap,
+    core.matches,
+    cfg.scoring,
+    boostTeamId(cfg.scoring, core.teams)
+  );
   const derived = await derivePlayer(player.id, core);
   const progress = await getRealProgress(core);
   const bracketPts = computeBracketPoints(derived.slots, progress, cfg.scoring);
@@ -27,8 +32,7 @@ export async function GET() {
     bracketPoints: bracketPts.total,
     total: matchPts.total + bracketPts.total,
     predictionsMade: preds.length,
-    lockAt: cfg.lockAt.toISOString(),
-    locked: Date.now() >= cfg.lockAt.getTime(),
+    lockMinutes: cfg.lockMinutes,
   });
 }
 
