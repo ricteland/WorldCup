@@ -9,6 +9,7 @@ import {
   roundOfSlot,
   slotKey,
   EXPECTED_ROUND_SIZE,
+  KO_MATCH_NUMS,
   KO_SOURCES,
   CHAMPION_SLOT,
   SCORING_ROUNDS,
@@ -81,7 +82,7 @@ export interface RealProgress {
   groupsFinal: boolean;
 }
 
-function realWinnerLoser(m: RealMatch): { winner?: string; loser?: string } {
+export function realWinnerLoser(m: RealMatch): { winner?: string; loser?: string } {
   if (m.status !== "FINISHED" || !m.homeTeamId || !m.awayTeamId) return {};
   if (m.winnerTeamId) {
     return {
@@ -215,27 +216,135 @@ export function gradeBracketSlot(slot: string, teamId: string, progress: RealPro
   return "PENDING";
 }
 
-/** Bracket points: +N per team correctly placed in each round (PLAN.MD §6). */
-export function computeBracketPoints(
-  slots: Record<string, string>,
-  progress: RealProgress,
-  cfg: ScoringConfig
-): { total: number; byRound: Record<ScoringRound, number> } {
-  const mine = reachedByRound(slots);
-  const byRound = {} as Record<ScoringRound, number>;
-  let total = 0;
-  for (const r of SCORING_ROUNDS) {
-    let correct = 0;
-    for (const t of mine[r]) if (progress.reached[r].has(t)) correct++;
-    byRound[r] = correct * cfg.bracket[r];
-    total += byRound[r];
+// ---------------------------------------------------------------------------
+// Round-by-round knockout picks (made against the real bracket)
+// ---------------------------------------------------------------------------
+
+export interface KoPredEntry {
+  homeScore: number;
+  awayScore: number;
+  /** Winner pick, required when the predicted score is a draw. */
+  winnerTeamId?: string | null;
+  /** Real participants the prediction was made against. */
+  snapHomeTeamId?: string | null;
+  snapAwayTeamId?: string | null;
+}
+
+/** The team a knockout prediction sends through, given the real matchup. */
+export function predictedKoWinner(
+  entry: { homeScore: number; awayScore: number; winnerTeamId?: string | null },
+  realHome: string,
+  realAway: string
+): string | null {
+  if (entry.homeScore > entry.awayScore) return realHome;
+  if (entry.awayScore > entry.homeScore) return realAway;
+  if (entry.winnerTeamId === realHome || entry.winnerTeamId === realAway)
+    return entry.winnerTeamId;
+  return null;
+}
+
+const koPredStale = (
+  p: { snapHomeTeamId?: string | null; snapAwayTeamId?: string | null },
+  home: string | undefined,
+  away: string | undefined
+) => (p.snapHomeTeamId ?? null) !== (home ?? null) || (p.snapAwayTeamId ?? null) !== (away ?? null);
+
+/**
+ * Per-match knockout gating: a match is open once both real participants are
+ * known; a stored pick is stale when reality no longer matches its snapshot
+ * (a sync/admin correction changed the matchup — re-enter the pick).
+ */
+export function koOpenAndStale(
+  koPreds: Map<number, { snapHomeTeamId?: string | null; snapAwayTeamId?: string | null }>,
+  progress: RealProgress
+): { open: Set<number>; stale: Set<number> } {
+  const open = new Set<number>();
+  const stale = new Set<number>();
+  for (const num of KO_MATCH_NUMS) {
+    const home = progress.realSlots[slotKey(num, "H")];
+    const away = progress.realSlots[slotKey(num, "A")];
+    if (home && away) open.add(num);
+    const p = koPreds.get(num);
+    if (p && koPredStale(p, home, away)) stale.add(num);
   }
+  return { open, stale };
+}
+
+/** Round a knockout match's winner advances to (final → CHAMPION; third place → null). */
+export function advanceRoundOfMatch(num: number): Exclude<ScoringRound, "R32"> | null {
+  switch (roundOfMatch(num)) {
+    case "R32":
+      return "R16";
+    case "R16":
+      return "QF";
+    case "QF":
+      return "SF";
+    case "SF":
+      return "FINAL";
+    case "FINAL":
+      return "CHAMPION";
+    default:
+      return null; // THIRD — not scored
+  }
+}
+
+/**
+ * Bracket points (PLAN.MD §6, round-by-round edition):
+ * - R32: +1 per real qualifier among the 32 teams the player's own predicted
+ *   group tables send through (the only bracket points still driven by
+ *   group-stage predictions).
+ * - Later rounds: each knockout pick names a winner among the real
+ *   participants; when that team really advances, the destination round's
+ *   points are awarded (R32 pick → R16 pts … final pick → CHAMPION pts).
+ *   Stale picks score nothing.
+ */
+export function computeBracketPoints(input: {
+  /** The player's derived slots from group predictions (R32 seeding only). */
+  groupSlots: Record<string, string>;
+  koPreds: Map<number, KoPredEntry>;
+  progress: RealProgress;
+  cfg: ScoringConfig;
+}): { total: number; byRound: Record<ScoringRound, number> } {
+  const { groupSlots, koPreds, progress, cfg } = input;
+  const byRound = Object.fromEntries(SCORING_ROUNDS.map((r) => [r, 0])) as Record<
+    ScoringRound,
+    number
+  >;
+
+  let correct = 0;
+  for (const t of reachedByRound(groupSlots).R32) if (progress.reached.R32.has(t)) correct++;
+  byRound.R32 = correct * cfg.bracket.R32;
+
+  for (const [num, p] of koPreds) {
+    const dest = advanceRoundOfMatch(num);
+    if (!dest) continue;
+    const home = progress.realSlots[slotKey(num, "H")];
+    const away = progress.realSlots[slotKey(num, "A")];
+    if (!home || !away || koPredStale(p, home, away)) continue;
+    const winner = predictedKoWinner(p, home, away);
+    if (winner && progress.reached[dest].has(winner)) byRound[dest] += cfg.bracket[dest];
+  }
+
+  let total = 0;
+  for (const r of SCORING_ROUNDS) total += byRound[r];
   return { total, byRound };
 }
 
-/** Match-prediction points for one player across all finished matches. */
+/**
+ * Match-prediction points for one player across all finished matches.
+ * Knockout preds carry a snapshot of the matchup they were made against;
+ * a pred whose snapshot disagrees with the real participants is not graded.
+ */
 export function computeMatchPoints(
-  preds: Map<number, { homeScore: number; awayScore: number }>,
+  preds: Map<
+    number,
+    {
+      homeScore: number;
+      awayScore: number;
+      snapHomeTeamId?: string | null;
+      snapAwayTeamId?: string | null;
+    }
+  >,
   matches: RealMatch[],
   cfg: ScoringConfig,
   boostedTeamId: string | null = null
@@ -244,7 +353,15 @@ export function computeMatchPoints(
   const graded = new Map<number, Grade>();
   for (const m of matches) {
     if (m.status !== "FINISHED" || m.homeScore == null || m.awayScore == null) continue;
-    const pred = preds.get(m.id);
+    let pred = preds.get(m.id);
+    // group preds carry no snapshot; KO preds always do
+    if (
+      pred &&
+      (pred.snapHomeTeamId || pred.snapAwayTeamId) &&
+      koPredStale(pred, m.homeTeamId ?? undefined, m.awayTeamId ?? undefined)
+    ) {
+      pred = undefined;
+    }
     const g = gradeScore(pred, { homeScore: m.homeScore, awayScore: m.awayScore });
     graded.set(m.id, g);
     total += matchPointsFor(g, cfg, matchInvolves(m, boostedTeamId));

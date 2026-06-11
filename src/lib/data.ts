@@ -3,17 +3,13 @@
 
 import { prisma } from "./db";
 import { getConfig } from "./config";
-import {
-  deriveBracket,
-  roundOfSlot,
-  type DeriveResult,
-  type KoScoreEntry,
-} from "./bracket";
+import { deriveBracket, type DeriveResult } from "./bracket";
 import {
   boostTeamId,
   computeBracketPoints,
   computeMatchPoints,
   computeRealProgress,
+  type KoPredEntry,
   type RealProgress,
 } from "./scoring";
 import type { Match, ScorePred, Team } from "@prisma/client";
@@ -44,14 +40,14 @@ export async function getCore(): Promise<Core> {
   return { teams, teamById: new Map(teams.map((t) => [t.id, t])), matches, teamsByGroup, groupMatches };
 }
 
-function toMaps(preds: ScorePred[]) {
+export function toMaps(preds: ScorePred[]) {
   const groupScores = new Map<number, { homeScore: number; awayScore: number }>();
-  const koScores = new Map<number, KoScoreEntry>();
+  const koPreds = new Map<number, KoPredEntry>();
   for (const p of preds) {
     if (p.matchId <= 72) {
       groupScores.set(p.matchId, { homeScore: p.homeScore, awayScore: p.awayScore });
     } else {
-      koScores.set(p.matchId, {
+      koPreds.set(p.matchId, {
         homeScore: p.homeScore,
         awayScore: p.awayScore,
         winnerTeamId: p.predWinnerTeamId,
@@ -60,35 +56,28 @@ function toMaps(preds: ScorePred[]) {
       });
     }
   }
-  return { groupScores, koScores };
+  return { groupScores, koPreds };
 }
 
-/** Run the cascade for one player (PLAN.MD §7). */
+/**
+ * Derive a player's predicted group tables and R32 seeding (PLAN.MD §7).
+ * Knockout picks are made against the real bracket and never cascade, so
+ * only group predictions feed the derivation.
+ */
 export async function derivePlayer(playerId: string, core?: Core): Promise<DeriveResult> {
   const c = core ?? (await getCore());
-  const preds = await prisma.scorePred.findMany({ where: { playerId } });
-  const { groupScores, koScores } = toMaps(preds);
+  const preds = await prisma.scorePred.findMany({
+    where: { playerId, matchId: { lte: 72 } },
+  });
   return deriveBracket({
     groupMatches: c.groupMatches,
     teamsByGroup: c.teamsByGroup,
-    groupScores,
-    koScores,
+    groupScores: new Map(
+      preds.map((p) => [p.matchId, { homeScore: p.homeScore, awayScore: p.awayScore }])
+    ),
+    koScores: new Map(),
     lotsSeed: playerId,
   });
-}
-
-/** Persist the derived bracket as BracketPick rows (kept consistent with §7). */
-export async function persistBracketPicks(playerId: string, derived: DeriveResult): Promise<void> {
-  const rows = Object.entries(derived.slots).map(([slot, teamId]) => ({
-    playerId,
-    slot,
-    round: roundOfSlot(slot),
-    teamId,
-  }));
-  await prisma.$transaction([
-    prisma.bracketPick.deleteMany({ where: { playerId } }),
-    ...(rows.length ? [prisma.bracketPick.createMany({ data: rows })] : []),
-  ]);
 }
 
 export async function getRealProgress(core?: Core): Promise<RealProgress> {
@@ -141,20 +130,26 @@ export async function getLeaderboard(): Promise<LeaderboardRow[]> {
 
   const rows = players.map((pl) => {
     const preds = predsByPlayer.get(pl.id) ?? [];
-    const { groupScores, koScores } = toMaps(preds);
-    const scoreMap = new Map<number, { homeScore: number; awayScore: number }>([
-      ...groupScores,
-      ...new Map([...koScores].map(([k, v]) => [k, { homeScore: v.homeScore, awayScore: v.awayScore }])),
-    ]);
-    const matchPts = computeMatchPoints(scoreMap, core.matches, cfg.scoring, boostedId);
+    const { groupScores, koPreds } = toMaps(preds);
+    const matchPts = computeMatchPoints(
+      new Map([...groupScores, ...koPreds]),
+      core.matches,
+      cfg.scoring,
+      boostedId
+    );
     const derived = deriveBracket({
       groupMatches: core.groupMatches,
       teamsByGroup: core.teamsByGroup,
       groupScores,
-      koScores,
+      koScores: new Map(),
       lotsSeed: pl.id,
     });
-    const bracketPts = computeBracketPoints(derived.slots, progress, cfg.scoring);
+    const bracketPts = computeBracketPoints({
+      groupSlots: derived.slots,
+      koPreds,
+      progress,
+      cfg: cfg.scoring,
+    });
     return {
       playerId: pl.id,
       displayName: pl.displayName,

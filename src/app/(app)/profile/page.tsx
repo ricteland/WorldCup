@@ -1,7 +1,7 @@
 import { getCurrentPlayer } from "@/lib/session";
 import { getConfig } from "@/lib/config";
 import { prisma } from "@/lib/db";
-import { getCore, derivePlayer, getRealProgress } from "@/lib/data";
+import { getCore, derivePlayer, getRealProgress, toMaps } from "@/lib/data";
 import { boostTeamId, computeBracketPoints, computeMatchPoints } from "@/lib/scoring";
 import { ProfileView } from "@/components/ProfileView";
 
@@ -14,11 +14,9 @@ export default async function ProfilePage() {
     getConfig(),
     prisma.scorePred.findMany({ where: { playerId: player.id } }),
   ]);
-  const scoreMap = new Map(
-    preds.map((p) => [p.matchId, { homeScore: p.homeScore, awayScore: p.awayScore }])
-  );
+  const { groupScores, koPreds } = toMaps(preds);
   const matchPts = computeMatchPoints(
-    scoreMap,
+    new Map([...groupScores, ...koPreds]),
     core.matches,
     cfg.scoring,
     boostTeamId(cfg.scoring, core.teams)
@@ -27,7 +25,12 @@ export default async function ProfilePage() {
     derivePlayer(player.id, core),
     getRealProgress(core),
   ]);
-  const bracketPts = computeBracketPoints(derived.slots, progress, cfg.scoring);
+  const bracketPts = computeBracketPoints({
+    groupSlots: derived.slots,
+    koPreds,
+    progress,
+    cfg: cfg.scoring,
+  });
 
   return (
     <ProfileView

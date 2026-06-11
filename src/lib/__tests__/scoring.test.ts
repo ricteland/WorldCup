@@ -1,11 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
+  advanceRoundOfMatch,
   boostTeamId,
   computeBracketPoints,
   computeMatchPoints,
   computeRealProgress,
   gradeBracketSlot,
+  koOpenAndStale,
   matchPointsFor,
+  predictedKoWinner,
   DEFAULT_SCORING,
   type RealMatch,
 } from "../scoring";
@@ -115,19 +118,133 @@ describe("computeRealProgress + bracket grading", () => {
     expect(p.eliminated.has("a")).toBe(true);
   });
 
-  it("scores bracket points per round", () => {
+  it("scores bracket points: R32 from group-predicted qualifiers, later rounds from winner picks", () => {
     const p = computeRealProgress({ matches, teamsByGroup });
-    const playerSlots = {
-      [slotKey(73, "H")]: "t1", // in R32 ✓ (1pt)
+    // predicted qualifiers from the player's group tables
+    const groupSlots = {
+      [slotKey(73, "H")]: "t1", // really in R32 ✓ (1pt)
       [slotKey(73, "A")]: "t9", // not reached (0)
-      [slotKey(74, "H")]: "t4", // ✓ (1pt)
-      [slotKey(90, "H")]: "t1", // reached R16 ✓ (2pts)
-      [slotKey(104, "H")]: "t1", // final unknown (0 for now)
+      [slotKey(74, "H")]: "t4", // ✓ (1pt — membership, slot doesn't matter)
     };
-    const { total, byRound } = computeBracketPoints(playerSlots, p, DEFAULT_SCORING);
+    const koPreds = new Map([
+      // picked t1 to win match 73; t1 really won → R16 points (2)
+      [73, { homeScore: 2, awayScore: 1, snapHomeTeamId: "t1", snapAwayTeamId: "t2" }],
+      // picked t4 in match 74; not played yet → nothing
+      [74, { homeScore: 0, awayScore: 1, snapHomeTeamId: "t3", snapAwayTeamId: "t4" }],
+    ]);
+    const { total, byRound } = computeBracketPoints({
+      groupSlots,
+      koPreds,
+      progress: p,
+      cfg: DEFAULT_SCORING,
+    });
     expect(byRound.R32).toBe(2);
     expect(byRound.R16).toBe(2);
-    expect(byRound.FINAL).toBe(0);
+    expect(byRound.QF).toBe(0);
     expect(total).toBe(4);
+  });
+
+  it("ignores stale knockout picks (snapshot no longer matches reality)", () => {
+    const p = computeRealProgress({ matches, teamsByGroup });
+    const koPreds = new Map([
+      [73, { homeScore: 2, awayScore: 1, snapHomeTeamId: "tX", snapAwayTeamId: "t2" }],
+    ]);
+    const { total } = computeBracketPoints({
+      groupSlots: {},
+      koPreds,
+      progress: p,
+      cfg: DEFAULT_SCORING,
+    });
+    expect(total).toBe(0);
+  });
+
+  it("awards CHAMPION points for the final winner pick, including on penalties", () => {
+    const final: RealMatch[] = [
+      { id: 104, stage: "FINAL", homeTeamId: "a", awayTeamId: "b", homeScore: 1, awayScore: 1, winnerTeamId: "b", status: "FINISHED" },
+    ];
+    const p = computeRealProgress({ matches: final, teamsByGroup: {} });
+    const koPreds = new Map([
+      [104, { homeScore: 1, awayScore: 1, winnerTeamId: "b", snapHomeTeamId: "a", snapAwayTeamId: "b" }],
+    ]);
+    const { total, byRound } = computeBracketPoints({
+      groupSlots: {},
+      koPreds,
+      progress: p,
+      cfg: DEFAULT_SCORING,
+    });
+    expect(byRound.CHAMPION).toBe(12);
+    expect(total).toBe(12);
+  });
+});
+
+describe("predictedKoWinner", () => {
+  it("resolves the winner from the score or the draw pick", () => {
+    expect(predictedKoWinner({ homeScore: 2, awayScore: 0 }, "h", "a")).toBe("h");
+    expect(predictedKoWinner({ homeScore: 0, awayScore: 1 }, "h", "a")).toBe("a");
+    expect(predictedKoWinner({ homeScore: 1, awayScore: 1, winnerTeamId: "a" }, "h", "a")).toBe("a");
+    // a draw without a valid pick names nobody
+    expect(predictedKoWinner({ homeScore: 1, awayScore: 1 }, "h", "a")).toBeNull();
+    expect(predictedKoWinner({ homeScore: 1, awayScore: 1, winnerTeamId: "x" }, "h", "a")).toBeNull();
+  });
+});
+
+describe("advanceRoundOfMatch", () => {
+  it("maps each knockout match to the round its winner reaches", () => {
+    expect(advanceRoundOfMatch(73)).toBe("R16");
+    expect(advanceRoundOfMatch(89)).toBe("QF");
+    expect(advanceRoundOfMatch(97)).toBe("SF");
+    expect(advanceRoundOfMatch(101)).toBe("FINAL");
+    expect(advanceRoundOfMatch(103)).toBeNull(); // third place — not scored
+    expect(advanceRoundOfMatch(104)).toBe("CHAMPION");
+  });
+});
+
+describe("koOpenAndStale", () => {
+  const matches: RealMatch[] = [
+    { id: 73, stage: "R32", homeTeamId: "t1", awayTeamId: "t2", homeScore: 1, awayScore: 0, status: "FINISHED" },
+    { id: 74, stage: "R32", homeTeamId: "t3", awayTeamId: "t4", status: "SCHEDULED" },
+    { id: 90, stage: "R16", status: "SCHEDULED" }, // only M90H known (winner of 73)
+  ];
+  const teamsByGroup = { A: ["t1", "t2"], B: ["t3", "t4"] };
+
+  it("opens a match once both real participants are known", () => {
+    const p = computeRealProgress({ matches, teamsByGroup });
+    const { open } = koOpenAndStale(new Map(), p);
+    expect(open.has(73)).toBe(true);
+    expect(open.has(74)).toBe(true);
+    expect(open.has(90)).toBe(false); // away side still undecided
+  });
+
+  it("flags picks whose snapshot disagrees with the real matchup", () => {
+    const p = computeRealProgress({ matches, teamsByGroup });
+    const { stale } = koOpenAndStale(
+      new Map([
+        [73, { snapHomeTeamId: "t1", snapAwayTeamId: "t2" }], // matches reality
+        [74, { snapHomeTeamId: "t3", snapAwayTeamId: "tX" }], // matchup changed
+      ]),
+      p
+    );
+    expect(stale.has(73)).toBe(false);
+    expect(stale.has(74)).toBe(true);
+  });
+});
+
+describe("computeMatchPoints with knockout snapshots", () => {
+  const matches: RealMatch[] = [
+    { id: 73, stage: "R32", homeTeamId: "t1", awayTeamId: "t2", homeScore: 1, awayScore: 0, status: "FINISHED" },
+  ];
+
+  it("grades a pick made against the real matchup, skips a stale one", () => {
+    const good = new Map([
+      [73, { homeScore: 1, awayScore: 0, snapHomeTeamId: "t1", snapAwayTeamId: "t2" }],
+    ]);
+    expect(computeMatchPoints(good, matches, DEFAULT_SCORING).total).toBe(5);
+
+    const stale = new Map([
+      [73, { homeScore: 1, awayScore: 0, snapHomeTeamId: "tX", snapAwayTeamId: "t2" }],
+    ]);
+    const { total, graded } = computeMatchPoints(stale, matches, DEFAULT_SCORING);
+    expect(total).toBe(0);
+    expect(graded.get(73)).toBe("PENDING");
   });
 });

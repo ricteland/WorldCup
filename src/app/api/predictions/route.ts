@@ -2,14 +2,14 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getConfig, isMatchLocked } from "@/lib/config";
 import { getCurrentPlayer } from "@/lib/session";
-import { getCore, derivePlayer, persistBracketPicks } from "@/lib/data";
+import { getRealProgress } from "@/lib/data";
 import { slotKey } from "@/lib/bracket";
 
 // POST /api/predictions { matchId, homeScore, awayScore, predWinnerTeamId? }
 // One endpoint for all 104 matches. Each match locks on its own rolling
-// deadline (lockMinutes before kickoff). Knockout predictions are validated
-// against the player's own cascade (participants must be derivable; draws need
-// a winner pick) and re-derive the persisted bracket (PLAN.MD §7).
+// deadline (lockMinutes before kickoff). Knockout matches open round by round:
+// a pick is only accepted once the real matchup is decided, and is made
+// against the real participants (draws need a winner pick).
 export async function POST(req: Request) {
   const player = await getCurrentPlayer();
   if (!player) return NextResponse.json({ error: "Not signed in" }, { status: 401 });
@@ -48,13 +48,12 @@ export async function POST(req: Request) {
   let winner: string | null = null;
 
   if (match.stage !== "GROUP") {
-    const core = await getCore();
-    const derived = await derivePlayer(player.id, core);
-    const home = derived.slots[slotKey(match.id, "H")];
-    const away = derived.slots[slotKey(match.id, "A")];
+    const progress = await getRealProgress();
+    const home = progress.realSlots[slotKey(match.id, "H")];
+    const away = progress.realSlots[slotKey(match.id, "A")];
     if (!home || !away) {
       return NextResponse.json(
-        { error: "Finish the predictions that feed this match first" },
+        { error: "This match opens once the real matchup is decided" },
         { status: 409 }
       );
     }
@@ -91,13 +90,5 @@ export async function POST(req: Request) {
     },
   });
 
-  // Re-run the cascade and keep the persisted bracket consistent.
-  const derived = await derivePlayer(player.id);
-  await persistBracketPicks(player.id, derived);
-
-  return NextResponse.json({
-    ok: true,
-    staleMatchNums: derived.staleMatchNums,
-    openMatchNums: derived.openMatchNums,
-  });
+  return NextResponse.json({ ok: true });
 }

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getConfig } from "@/lib/config";
 import { getCurrentPlayer } from "@/lib/session";
-import { getCore, derivePlayer, getRealProgress } from "@/lib/data";
+import { getCore, derivePlayer, getRealProgress, toMaps } from "@/lib/data";
 import { boostTeamId, computeBracketPoints, computeMatchPoints } from "@/lib/scoring";
 
 // GET /api/me — current player + points breakdown
@@ -12,16 +12,21 @@ export async function GET() {
 
   const [core, cfg] = await Promise.all([getCore(), getConfig()]);
   const preds = await prisma.scorePred.findMany({ where: { playerId: player.id } });
-  const scoreMap = new Map(preds.map((p) => [p.matchId, { homeScore: p.homeScore, awayScore: p.awayScore }]));
+  const { groupScores, koPreds } = toMaps(preds);
   const matchPts = computeMatchPoints(
-    scoreMap,
+    new Map([...groupScores, ...koPreds]),
     core.matches,
     cfg.scoring,
     boostTeamId(cfg.scoring, core.teams)
   );
   const derived = await derivePlayer(player.id, core);
   const progress = await getRealProgress(core);
-  const bracketPts = computeBracketPoints(derived.slots, progress, cfg.scoring);
+  const bracketPts = computeBracketPoints({
+    groupSlots: derived.slots,
+    koPreds,
+    progress,
+    cfg: cfg.scoring,
+  });
 
   return NextResponse.json({
     playerId: player.id,

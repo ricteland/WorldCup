@@ -1,8 +1,9 @@
 "use client";
 
-// Bracket Preview tab (PLAN.MD §9.3): the player's own knockout bracket,
-// seeded from their predicted qualifiers, edited round by round. Horizontal
-// round scroller on mobile; grading colors vs the real bracket once known.
+// Bracket tab (PLAN.MD §9.3, round-by-round edition): the real knockout
+// bracket as it fills in, with the player's pick per match. Each match opens
+// for predictions once its real matchup is decided. Horizontal round scroller
+// on mobile; the picked side colors gold/red once the match is played.
 
 import { useState } from "react";
 import { Crown, AlertTriangle } from "lucide-react";
@@ -133,7 +134,7 @@ function BracketCard({ match }: { match: BracketMatchView }) {
       </button>
 
       {!match.open && !finished && (
-        <p className="mt-1 px-1 text-[10px] text-slate-600">Waiting on earlier picks…</p>
+        <p className="mt-1 px-1 text-[10px] text-slate-600">Waiting for the real matchup…</p>
       )}
       {match.pred && finished && (
         <p className="mt-1 px-1 text-[10px] text-slate-500">
@@ -157,10 +158,15 @@ export function BracketView({ payload }: { payload: BracketPayload }) {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="font-display text-2xl font-bold text-slate-100">Your bracket</h1>
+        <h1 className="font-display text-2xl font-bold text-slate-100">Knockout bracket</h1>
         <p className="mt-1 text-sm text-slate-400">
-          Seeded from your predicted group tables.{" "}
-          {payload.groupsDone < 12 && `Predict all groups to unlock it (${payload.groupsDone}/12).`}
+          The real bracket, round by round — each match opens for predictions once its matchup is
+          decided.{" "}
+          {!payload.groupsFinal
+            ? "The Round of 32 unlocks when the group stage ends."
+            : payload.openCount > 0
+              ? `${payload.openCount} match${payload.openCount > 1 ? "es" : ""} open for picks.`
+              : ""}
         </p>
       </div>
 
@@ -192,8 +198,8 @@ export function BracketView({ payload }: { payload: BracketPayload }) {
       {payload.staleCount > 0 && (
         <div className="rounded-2xl bg-gold-400/10 px-4 py-2.5 text-xs text-gold-300 ring-1 ring-gold-400/30">
           <AlertTriangle size={13} className="mr-1 inline" />
-          {payload.staleCount} knockout pick{payload.staleCount > 1 ? "s" : ""} no longer match your
-          group predictions — re-enter them.
+          {payload.staleCount} knockout pick{payload.staleCount > 1 ? "s" : ""} where the matchup
+          changed — re-enter them.
         </div>
       )}
 

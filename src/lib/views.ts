@@ -3,10 +3,18 @@
 
 import { prisma } from "./db";
 import { getConfig, isMatchLocked, matchLockAt } from "./config";
-import { getCore, derivePlayer, getRealProgress } from "./data";
+import { getCore, derivePlayer, getRealProgress, toMaps } from "./data";
 import { gradeScore, type Grade } from "./grade";
-import { boostTeamId, gradeBracketSlot, matchInvolves, matchPointsFor } from "./scoring";
-import { computeTable } from "./standings";
+import {
+  boostTeamId,
+  gradeBracketSlot,
+  koOpenAndStale,
+  matchInvolves,
+  matchPointsFor,
+  predictedKoWinner,
+  realWinnerLoser,
+} from "./scoring";
+import { computeTable, rankThirds, type TableRow } from "./standings";
 import { slotKey, roundOfMatch, CHAMPION_SLOT, KO_MATCH_NUMS } from "./bracket";
 import type { Team } from "@prisma/client";
 
@@ -45,7 +53,7 @@ export interface MatchView {
   awaySlotLabel: string | null;
   homeScore: number | null;
   awayScore: number | null;
-  // the player's own predicted participants for knockout matches
+  // knockout participants resolved from the real bracket (covers source lag)
   predHome: TeamView | null;
   predAway: TeamView | null;
   pred: { homeScore: number; awayScore: number; predWinnerTeamId: string | null } | null;
@@ -56,7 +64,7 @@ export interface MatchView {
   locked: boolean; // this match's own rolling deadline has passed
   lockAtUtc: string; // when this match freezes (lockMinutes before kickoff)
   open: boolean; // can be predicted right now (ignoring the lock)
-  stale: boolean; // knockout pred made against participants the cascade no longer produces
+  stale: boolean; // knockout pick made against a matchup reality no longer matches
 }
 
 export interface MatchesPayload {
@@ -70,19 +78,20 @@ export async function getMatchesView(playerId: string): Promise<MatchesPayload> 
     getConfig(),
     prisma.scorePred.findMany({ where: { playerId } }),
   ]);
-  const derived = await derivePlayer(playerId, core);
+  const progress = await getRealProgress(core);
   const predByMatch = new Map(preds.map((p) => [p.matchId, p]));
-  const stale = new Set(derived.staleMatchNums);
-  const open = new Set(derived.openMatchNums);
+  const { koPreds } = toMaps(preds);
+  const { open, stale } = koOpenAndStale(koPreds, progress);
   const boostedId = boostTeamId(cfg.scoring, core.teams);
 
   const matches = core.matches.map((m): MatchView => {
     const pred = predByMatch.get(m.id);
     const isGroup = m.stage === "GROUP";
-    const predHomeId = isGroup ? m.homeTeamId : derived.slots[slotKey(m.id, "H")];
-    const predAwayId = isGroup ? m.awayTeamId : derived.slots[slotKey(m.id, "A")];
+    // knockouts: the real participants, via realSlots when the source lags
+    const predHomeId = isGroup ? m.homeTeamId : progress.realSlots[slotKey(m.id, "H")];
+    const predAwayId = isGroup ? m.awayTeamId : progress.realSlots[slotKey(m.id, "A")];
     const grade =
-      m.status === "FINISHED" && m.homeScore != null
+      m.status === "FINISHED" && m.homeScore != null && !stale.has(m.id)
         ? gradeScore(pred, { homeScore: m.homeScore, awayScore: m.awayScore! })
         : "PENDING";
     return {
@@ -145,7 +154,10 @@ export interface GroupView {
 
 export interface GroupsPayload {
   groups: GroupView[];
+  /** Live tables built from real finished matches — updates as the days go on. */
+  realGroups: GroupView[];
   qualifiedThirdGroups: string[] | null;
+  realQualifiedThirdGroups: string[] | null;
   realFinal: boolean;
 }
 
@@ -160,25 +172,70 @@ export async function getGroupsView(playerId: string): Promise<GroupsPayload> {
     preds.map((p) => [p.matchId, { homeScore: p.homeScore, awayScore: p.awayScore }])
   );
 
-  // Real final tables (for the correctness overlay once the group stage ends).
-  const realTables: Record<string, string[]> = {};
-  if (progress.groupsFinal) {
-    for (const g of Object.keys(core.teamsByGroup)) {
-      const finished = core.matches.filter(
-        (m) => m.groupName === g && m.status === "FINISHED" && m.homeScore != null
-      );
-      realTables[g] = computeTable(
-        core.teamsByGroup[g],
-        finished.map((m) => ({
-          homeTeamId: m.homeTeamId!,
-          awayTeamId: m.awayTeamId!,
-          homeScore: m.homeScore!,
-          awayScore: m.awayScore!,
-        })),
-        { lotsSeed: "real" }
-      ).map((r) => r.teamId);
-    }
+  // Real tables computed live from finished matches — they feed the "Real"
+  // view as the tournament unfolds and the correctness overlay once final.
+  const realTables: Record<string, TableRow[]> = {};
+  const realPlayed: Record<string, number> = {};
+  for (const g of Object.keys(core.teamsByGroup)) {
+    const finished = core.matches.filter(
+      (m) => m.groupName === g && m.status === "FINISHED" && m.homeScore != null
+    );
+    realPlayed[g] = finished.length;
+    realTables[g] = computeTable(
+      core.teamsByGroup[g],
+      finished.map((m) => ({
+        homeTeamId: m.homeTeamId!,
+        awayTeamId: m.awayTeamId!,
+        homeScore: m.homeScore!,
+        awayScore: m.awayScore!,
+      })),
+      { lotsSeed: "real" }
+    );
   }
+
+  // Real best thirds are only knowable once every group has finished.
+  let realQualifiedThirdGroups: string[] | null = null;
+  if (progress.groupsFinal) {
+    const thirds = Object.entries(realTables).map(([g, rows]) => ({
+      ...rows[2],
+      groupName: g,
+    }));
+    realQualifiedThirdGroups = rankThirds(thirds, "real")
+      .slice(0, 8)
+      .map((t) => t.groupName);
+  }
+  const realQualThirds = new Set(realQualifiedThirdGroups ?? []);
+
+  const realGroups = Object.keys(core.teamsByGroup)
+    .sort()
+    .map((g): GroupView => {
+      const complete = realPlayed[g] === 6;
+      const rows = realTables[g].map(
+        (r, i): GroupRowView => ({
+          team: teamView(core.teamById.get(r.teamId))!,
+          played: r.played,
+          won: r.won,
+          drawn: r.drawn,
+          lost: r.lost,
+          gf: r.gf,
+          ga: r.ga,
+          gd: r.gd,
+          pts: r.pts,
+          pos: i + 1,
+          qualifies: !complete
+            ? null
+            : i === 0
+              ? "winner"
+              : i === 1
+                ? "runner_up"
+                : i === 2 && realQualThirds.has(g)
+                  ? "best_third"
+                  : null,
+          grade: "PENDING",
+        })
+      );
+      return { name: g, complete, predsMade: realPlayed[g], rows };
+    });
 
   const qualifiedThirds = new Set(derived.qualifiedThirdGroups ?? []);
   const groups = Object.keys(core.teamsByGroup)
@@ -208,7 +265,7 @@ export async function getGroupsView(playerId: string): Promise<GroupsPayload> {
         // qualified but in a different slot, red = team didn't qualify.
         let grade: Grade = "PENDING";
         if (qualifies && progress.groupsFinal && progress.complete.R32) {
-          const realPos = realTables[g]?.indexOf(r.teamId) ?? -1;
+          const realPos = realTables[g]?.findIndex((row) => row.teamId === r.teamId) ?? -1;
           if (realPos === i) grade = "EXACT";
           else if (progress.reached.R32.has(r.teamId)) grade = "RESULT";
           else grade = "WRONG";
@@ -233,7 +290,9 @@ export async function getGroupsView(playerId: string): Promise<GroupsPayload> {
 
   return {
     groups,
+    realGroups,
     qualifiedThirdGroups: derived.qualifiedThirdGroups,
+    realQualifiedThirdGroups,
     realFinal: progress.groupsFinal,
   };
 }
@@ -269,9 +328,11 @@ export interface BracketMatchView {
 
 export interface BracketPayload {
   rounds: { round: string; title: string; matches: BracketMatchView[] }[];
+  /** The player's predicted winner of the final, once they've picked it. */
   champion: { team: TeamView; grade: Grade } | null;
   staleCount: number;
-  groupsDone: number; // of 12 — how much of the cascade is unlocked
+  groupsFinal: boolean; // real group stage done — the R32 exists
+  openCount: number; // knockout matches currently predictable
 }
 
 const ROUND_TITLES: Record<string, string> = {
@@ -285,27 +346,15 @@ const ROUND_TITLES: Record<string, string> = {
 
 export async function getBracketView(playerId: string): Promise<BracketPayload> {
   const core = await getCore();
-  const [derived, progress, preds, cfg] = await Promise.all([
-    derivePlayer(playerId, core),
+  const [progress, preds, cfg] = await Promise.all([
     getRealProgress(core),
     prisma.scorePred.findMany({ where: { playerId, matchId: { gte: 73 } } }),
     getConfig(),
   ]);
   const predByMatch = new Map(preds.map((p) => [p.matchId, p]));
-  const stale = new Set(derived.staleMatchNums);
-  const open = new Set(derived.openMatchNums);
+  const { koPreds } = toMaps(preds);
+  const { open, stale } = koOpenAndStale(koPreds, progress);
   const matchById = new Map(core.matches.map((m) => [m.id, m]));
-
-  const side = (num: number, s: "H" | "A"): BracketSideView => {
-    const teamId = derived.slots[slotKey(num, s)];
-    const dbMatch = matchById.get(num);
-    const rawSlot = s === "H" ? dbMatch?.homeSlot : dbMatch?.awaySlot;
-    return {
-      team: teamView(teamId ? core.teamById.get(teamId) : null),
-      label: teamId ? null : slotLabel(rawSlot),
-      grade: teamId ? gradeBracketSlot(slotKey(num, s), teamId, progress) : "PENDING",
-    };
-  };
 
   const rounds = (["R32", "R16", "QF", "SF", "THIRD", "FINAL"] as const).map((round) => ({
     round,
@@ -313,13 +362,39 @@ export async function getBracketView(playerId: string): Promise<BracketPayload> 
     matches: KO_MATCH_NUMS.filter((n) => roundOfMatch(n) === round).map((num): BracketMatchView => {
       const db = matchById.get(num)!;
       const p = predByMatch.get(num);
+      const homeId = progress.realSlots[slotKey(num, "H")];
+      const awayId = progress.realSlots[slotKey(num, "A")];
+
+      // Grade the player's winner pick once the real match is decided:
+      // the picked side turns gold when it went through, red when it didn't.
+      const pickedWinner =
+        p && homeId && awayId && !stale.has(num)
+          ? predictedKoWinner(
+              { homeScore: p.homeScore, awayScore: p.awayScore, winnerTeamId: p.predWinnerTeamId },
+              homeId,
+              awayId
+            )
+          : null;
+      const { winner: realWinner } = realWinnerLoser(db);
+      const sideGrade = (teamId: string | undefined): Grade =>
+        teamId && pickedWinner === teamId && realWinner
+          ? realWinner === teamId
+            ? "EXACT"
+            : "WRONG"
+          : "PENDING";
+      const side = (teamId: string | undefined, rawSlot: string | null): BracketSideView => ({
+        team: teamView(teamId ? core.teamById.get(teamId) : null),
+        label: teamId ? null : slotLabel(rawSlot),
+        grade: sideGrade(teamId),
+      });
+
       return {
         num,
         round,
         kickoffUtc: db.kickoffUtc.toISOString(),
         venue: db.venue,
-        home: side(num, "H"),
-        away: side(num, "A"),
+        home: side(homeId, db.homeSlot),
+        away: side(awayId, db.awaySlot),
         pred: p
           ? { homeScore: p.homeScore, awayScore: p.awayScore, predWinnerTeamId: p.predWinnerTeamId }
           : null,
@@ -336,7 +411,15 @@ export async function getBracketView(playerId: string): Promise<BracketPayload> 
     }),
   }));
 
-  const championId = derived.slots[CHAMPION_SLOT];
+  // Champion = the player's predicted winner of the final.
+  const finalPred = koPreds.get(104);
+  const finalHome = progress.realSlots[slotKey(104, "H")];
+  const finalAway = progress.realSlots[slotKey(104, "A")];
+  const championId =
+    finalPred && finalHome && finalAway && !stale.has(104)
+      ? predictedKoWinner(finalPred, finalHome, finalAway)
+      : null;
+
   return {
     rounds,
     champion: championId
@@ -345,7 +428,8 @@ export async function getBracketView(playerId: string): Promise<BracketPayload> 
           grade: gradeBracketSlot(CHAMPION_SLOT, championId, progress),
         }
       : null,
-    staleCount: derived.staleMatchNums.length,
-    groupsDone: Object.keys(derived.groupTables).length,
+    staleCount: stale.size,
+    groupsFinal: progress.groupsFinal,
+    openCount: open.size,
   };
 }

@@ -286,9 +286,9 @@ function MatchCard({ match }: { match: MatchView }) {
         <TeamSide team={awayTeam} label={match.awaySlotLabel} align="right" />
       </button>
 
-      {!match.open && !finished && isKo && !match.home && (
+      {!match.open && !finished && isKo && (
         <p className="mt-1.5 text-center text-[11px] text-slate-600">
-          Predict the matches that feed this one first
+          Opens once the real matchup is decided
         </p>
       )}
 
