@@ -1,6 +1,9 @@
-// Minimal service worker: cache-first for static assets, network-first for
-// everything else (predictions must always be fresh).
-const CACHE = "wc26-v2";
+// Minimal service worker: network-first everywhere, cache as offline fallback.
+// Never cache-first for /_next/static/ — dev chunk names are stable across
+// rebuilds, so serving them from cache hands old JS to a new server (hydration
+// mismatches). Online, the browser's HTTP cache already handles immutable
+// production chunks; the SW cache only needs to cover offline.
+const CACHE = "wc26-v3";
 const STATIC = [
   "/assets/icon-192.png",
   "/assets/icon-512.png",
@@ -27,15 +30,15 @@ self.addEventListener("fetch", (event) => {
 
   if (url.pathname.startsWith("/assets/") || url.pathname.startsWith("/_next/static/")) {
     event.respondWith(
-      caches.match(event.request).then(
-        (hit) =>
-          hit ||
-          fetch(event.request).then((res) => {
+      fetch(event.request)
+        .then((res) => {
+          if (res.ok) {
             const copy = res.clone();
             caches.open(CACHE).then((c) => c.put(event.request, copy));
-            return res;
-          })
-      )
+          }
+          return res;
+        })
+        .catch(() => caches.match(event.request))
     );
     return;
   }

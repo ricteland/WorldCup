@@ -74,6 +74,40 @@ describe("bundled 2026 schedule", () => {
     }
   });
 
+  it("keeps in-play scores without marking the match finished", () => {
+    const live: SourceFile = {
+      name: "live",
+      matches: [
+        {
+          round: "Matchday 1",
+          group: "Group A",
+          date: "2026-06-11",
+          time: "13:00 UTC-6",
+          team1: "Mexico",
+          team2: "South Africa",
+          score1: 1,
+          score2: 0,
+          status: "LIVE",
+        },
+        {
+          round: "Matchday 1",
+          group: "Group A",
+          date: "2026-06-11",
+          time: "19:00 UTC-6",
+          team1: "Canada",
+          team2: "Panama",
+          score1: 2,
+          score2: 1,
+        },
+      ],
+    };
+    const [inPlay, done] = parseSourceFile(live);
+    expect(inPlay.finished).toBe(false);
+    expect(inPlay.homeScore).toBe(1);
+    expect(inPlay.awayScore).toBe(0);
+    expect(done.finished).toBe(true);
+  });
+
   it("recognises placeholder labels", () => {
     expect(isPlaceholder("1E")).toBe(true);
     expect(isPlaceholder("3A/B/C/D/F")).toBe(true);

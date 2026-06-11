@@ -3,7 +3,7 @@
 // Match Predictions tab (PLAN.MD §9.1): all 104 matches grouped by day,
 // inline stepper editor, lock state, and result grading colors.
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ChevronDown, LockKeyhole, Minus, Plus, AlertTriangle, MapPin } from "lucide-react";
 import { cn } from "@/lib/cn";
@@ -199,6 +199,8 @@ function MatchCard({ match, locked }: { match: MatchView; locked: boolean }) {
   const homeTeam = isKo ? (match.home ?? match.predHome) : match.home;
   const awayTeam = isKo ? (match.away ?? match.predAway) : match.away;
   const finished = match.status === "FINISHED";
+  const liveScore =
+    match.status === "LIVE" && match.homeScore != null && match.awayScore != null;
   const canEdit = !locked && match.open && !finished;
 
   return (
@@ -241,15 +243,20 @@ function MatchCard({ match, locked }: { match: MatchView; locked: boolean }) {
         <TeamSide team={homeTeam} label={match.homeSlotLabel} align="left" />
 
         <div className="flex flex-col items-center px-1">
-          {finished ? (
+          {finished || liveScore ? (
             <>
-              <div className="font-display text-xl font-bold text-slate-100">
+              <div
+                className={cn(
+                  "font-display text-xl font-bold",
+                  finished ? "text-slate-100" : "text-red-300"
+                )}
+              >
                 {match.homeScore}–{match.awayScore}
               </div>
               {match.pred && (
                 <Chip className={cn("mt-0.5", GRADE_BADGE[match.grade])}>
                   you: {match.pred.homeScore}–{match.pred.awayScore}
-                  {match.points > 0 && ` · +${match.points}`}
+                  {finished && match.points > 0 && ` · +${match.points}`}
                 </Chip>
               )}
             </>
@@ -287,8 +294,35 @@ function MatchCard({ match, locked }: { match: MatchView; locked: boolean }) {
 }
 
 export function MatchList({ payload }: { payload: MatchesPayload }) {
+  const router = useRouter();
   const [filter, setFilter] = useState<Filter>("all");
   const today = new Date().toDateString();
+
+  // While a match is in play, re-pull the server payload so live scores and
+  // status flips show up without a manual reload (poller cadence applies).
+  // Background tabs skip the refresh and catch up when they regain focus.
+  const anyLive = payload.matches.some((m) => m.status === "LIVE");
+  useEffect(() => {
+    if (!anyLive) return;
+    let last = Date.now();
+    const refresh = () => {
+      last = Date.now();
+      router.refresh();
+    };
+    const id = setInterval(() => {
+      if (!document.hidden) refresh();
+    }, 60_000);
+    // Catch up when the tab regains visibility, but alt-tabbing back and
+    // forth shouldn't fire a request every time.
+    const onVisible = () => {
+      if (!document.hidden && Date.now() - last > 30_000) refresh();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [anyLive, router]);
 
   const filtered = useMemo(() => {
     return payload.matches.filter((m) => {

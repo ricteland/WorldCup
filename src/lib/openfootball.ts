@@ -12,6 +12,7 @@ export interface SourceMatch {
   group?: string; // "Group A"
   ground?: string;
   num?: number;
+  status?: string; // some feeds flag in-play matches ("LIVE", "IN PLAY", "HT", …)
   // result shapes seen across openfootball files
   score1?: number;
   score2?: number;
@@ -41,10 +42,11 @@ export interface ParsedMatch {
   homeScore?: number; // full-time (incl. extra time when present)
   awayScore?: number;
   winnerName?: string; // knockout winner when decided on penalties
-  finished: boolean;
+  finished: boolean; // false while in play, even when partial scores are present
 }
 
 const PLACEHOLDER_RE = /^([12][A-L]|3[A-L](\/[A-L])+|W\d+|L\d+)$/;
+const LIVE_STATUS_RE = /live|in[ _-]?play|playing|^ht$|half/i;
 
 function teamName(t: string | { name: string }): string {
   return typeof t === "string" ? t : t.name;
@@ -115,7 +117,8 @@ export function parseSourceFile(src: SourceFile): ParsedMatch[] {
     const t1 = teamName(m.team1);
     const t2 = teamName(m.team2);
     const { homeScore, awayScore, penHome, penAway } = extractScore(m);
-    const finished = homeScore != null && awayScore != null;
+    const live = m.status != null && LIVE_STATUS_RE.test(m.status);
+    const finished = homeScore != null && awayScore != null && !live;
 
     let winnerName: string | undefined;
     if (finished && stage !== "GROUP" && !isPlaceholder(t1) && !isPlaceholder(t2)) {
