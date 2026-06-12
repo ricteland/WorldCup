@@ -15,16 +15,16 @@ import {
 import { slotKey, CHAMPION_SLOT } from "../bracket";
 
 describe("matchPointsFor", () => {
-  it("awards 5 / 2 / 0 by default", () => {
+  it("awards 5 / 3 / 0 by default", () => {
     expect(matchPointsFor("EXACT", DEFAULT_SCORING)).toBe(5);
-    expect(matchPointsFor("RESULT", DEFAULT_SCORING)).toBe(2);
+    expect(matchPointsFor("RESULT", DEFAULT_SCORING)).toBe(3);
     expect(matchPointsFor("WRONG", DEFAULT_SCORING)).toBe(0);
     expect(matchPointsFor("PENDING", DEFAULT_SCORING)).toBe(0);
   });
 
   it("multiplies points for boosted matches (×3 by default)", () => {
     expect(matchPointsFor("EXACT", DEFAULT_SCORING, true)).toBe(15);
-    expect(matchPointsFor("RESULT", DEFAULT_SCORING, true)).toBe(6);
+    expect(matchPointsFor("RESULT", DEFAULT_SCORING, true)).toBe(9);
     expect(matchPointsFor("WRONG", DEFAULT_SCORING, true)).toBe(0);
   });
 });
@@ -56,11 +56,11 @@ describe("computeMatchPoints", () => {
   it("sums exact + result points and skips unfinished matches", () => {
     const preds = new Map([
       [1, { homeScore: 2, awayScore: 1 }], // exact: 5
-      [2, { homeScore: 1, awayScore: 1 }], // result: 2
+      [2, { homeScore: 1, awayScore: 1 }], // result: 3
       [3, { homeScore: 1, awayScore: 0 }], // pending
     ]);
     const { total, graded } = computeMatchPoints(preds, matches, DEFAULT_SCORING);
-    expect(total).toBe(7);
+    expect(total).toBe(8);
     expect(graded.get(1)).toBe("EXACT");
     expect(graded.get(2)).toBe("RESULT");
     expect(graded.has(3)).toBe(false);
@@ -69,12 +69,12 @@ describe("computeMatchPoints", () => {
   it("triples points only for matches involving the boosted team", () => {
     const preds = new Map([
       [1, { homeScore: 2, awayScore: 1 }], // exact, involves x: 5 × 3
-      [2, { homeScore: 1, awayScore: 1 }], // result, involves x: 2 × 3
+      [2, { homeScore: 1, awayScore: 1 }], // result, involves x: 3 × 3
     ]);
     const { total } = computeMatchPoints(preds, matches, DEFAULT_SCORING, "x");
-    expect(total).toBe(21);
+    expect(total).toBe(24);
     // boosted team not playing in either match → plain points
-    expect(computeMatchPoints(preds, matches, DEFAULT_SCORING, "q").total).toBe(7);
+    expect(computeMatchPoints(preds, matches, DEFAULT_SCORING, "q").total).toBe(8);
   });
 });
 

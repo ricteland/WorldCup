@@ -18,6 +18,7 @@ import {
 
 export interface ScoringConfig {
   exact: number;
+  /** Right result, wrong score. */
   result: number;
   bracket: Record<ScoringRound, number>;
   /** Match points are multiplied when this team plays (the league is Spanish). */
@@ -27,7 +28,7 @@ export interface ScoringConfig {
 
 export const DEFAULT_SCORING: ScoringConfig = {
   exact: 5,
-  result: 2,
+  result: 3,
   bracket: { R32: 1, R16: 2, QF: 4, SF: 6, FINAL: 8, CHAMPION: 12 },
   boostTeamCode: "ESP",
   boostMultiplier: 3,
