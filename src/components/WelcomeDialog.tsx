@@ -5,12 +5,14 @@
 
 import { createContext, useContext, useState, useSyncExternalStore, type ReactNode } from "react";
 import { X } from "lucide-react";
+import type { ScoringConfig } from "@/lib/scoring";
 import { Button, Card, Chip } from "./ui";
 
 const WelcomeCtx = createContext<{ open: () => void }>({ open: () => {} });
 export const useWelcome = () => useContext(WelcomeCtx);
 
-const SEEN_KEY = "wc26:welcomed";
+// bump the suffix when the rules change so everyone sees the dialog again
+const SEEN_KEY = "wc26:welcomed:v2";
 const subscribeNever = () => () => {};
 
 export function WelcomeProvider({
@@ -19,13 +21,7 @@ export function WelcomeProvider({
   children,
 }: {
   lockMinutes: number;
-  scoring: {
-    exact: number;
-    result: number;
-    bracket: Record<string, number>;
-    boostTeamCode: string | null;
-    boostMultiplier: number;
-  };
+  scoring: ScoringConfig;
   children: ReactNode;
 }) {
   // open on first visit (server snapshot: closed), unless the user has acted
@@ -63,11 +59,13 @@ export function WelcomeProvider({
 
             <div className="space-y-4 text-sm text-slate-300">
               <p>
-                You predict the <strong className="text-slate-100">whole tournament up front</strong> — a
-                score for every one of the 104 matches. Your scores build{" "}
-                <strong className="text-slate-100">your own group tables</strong> and{" "}
-                <strong className="text-slate-100">your own knockout bracket</strong>: group picks decide
-                who you send to the Round of 32, then you predict each knockout game round by round.
+                You predict the <strong className="text-slate-100">whole group stage up front</strong> — a
+                score for all 72 group games. Your scores build{" "}
+                <strong className="text-slate-100">your own group tables</strong>, which decide who you
+                send to the Round of 32. The knockouts are different:{" "}
+                <strong className="text-slate-100">each game opens for predictions once its real
+                matchup is decided</strong>, so you pick round by round as the actual bracket fills in.
+                If you predict a knockout draw, you also pick who goes through.
               </p>
 
               <div>
@@ -99,7 +97,9 @@ export function WelcomeProvider({
               <div>
                 <h3 className="mb-1.5 font-semibold text-slate-100">Bracket points</h3>
                 <p className="mb-1.5 text-xs text-slate-400">
-                  Per team you correctly place in each round:
+                  R32: +{scoring.bracket.R32} per team your group tables correctly send through.
+                  Later rounds: when the winner you picked in a knockout game really goes
+                  through, you earn the round they advance to:
                 </p>
                 <div className="grid grid-cols-3 gap-1.5 text-center">
                   {Object.entries(scoring.bracket).map(([round, pts]) => (
@@ -130,7 +130,8 @@ export function WelcomeProvider({
                   <strong className="text-gold-300">Rolling deadlines:</strong> each match locks{" "}
                   {lockMinutes} minutes before its own kickoff and can&apos;t be changed after
                   that. Everything else stays open — you can keep predicting and tweaking
-                  upcoming matches all tournament long.
+                  upcoming matches all tournament long. Once a game kicks off, tap it to see
+                  everyone&apos;s predictions — and once it ends, who scored what on it.
                 </p>
               </div>
             </div>
