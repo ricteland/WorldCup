@@ -3,6 +3,7 @@
 
 import { prisma } from "./db";
 import { getConfig } from "./config";
+import { lotsHash } from "./standings";
 import { deriveBracket, type DeriveResult } from "./bracket";
 import {
   boostTeamId,
@@ -160,9 +161,13 @@ export async function getLeaderboard(): Promise<LeaderboardRow[]> {
     };
   });
 
-  // sort by total desc; shuffle within equal totals (random order, no tiebreaker)
-  const jitter = new Map(rows.map((r) => [r.playerId, Math.random()]));
-  rows.sort((a, b) => b.total - a.total || jitter.get(a.playerId)! - jitter.get(b.playerId)!);
+  // sort by total desc; equal totals fall back to a seeded "drawing of lots"
+  // (random-looking but deterministic, so the order survives refreshes)
+  rows.sort(
+    (a, b) =>
+      b.total - a.total ||
+      lotsHash("leaderboard", a.playerId) - lotsHash("leaderboard", b.playerId)
+  );
   rows.forEach((r, i) => (r.rank = i + 1));
   return rows;
 }
