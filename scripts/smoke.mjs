@@ -368,6 +368,31 @@ console.log("12. gambling corner");
   }
   check("the house never goes broke (admin refilled)", adminBalance > 0 && refillSeen,
     `balance=${adminBalance} refilled=${refillSeen}`);
+
+  // secret income: every NEW point quietly pays $1 into the bankroll, which
+  // can resurrect a bankrupt gambler. Finish M75 (player predicted 2–0).
+  const before = (await player.req("GET", "/api/leaderboard")).json.rows
+    .find((r) => r.displayName === name).total;
+  const m75 = matches.find((m) => m.id === 75);
+  await admin.req("POST", "/api/admin/match", {
+    matchId: 75,
+    homeTeamId: m75.predHome.id,
+    awayTeamId: m75.predAway.id,
+    homeScore: 2,
+    awayScore: 0,
+    status: "FINISHED",
+  });
+  const afterRow = (await player.req("GET", "/api/leaderboard")).json.rows
+    .find((r) => r.displayName === name);
+  const earned = afterRow.total - before;
+  check("new points earned by the bankrupt player", earned > 0, `earned=${earned}`);
+  check("once bankrupt, always tagged (badge survives the refill)",
+    afterRow.bankrupt === true, JSON.stringify(afterRow));
+  const back = await player.req("POST", "/api/casino", { bet: { type: "red" }, amount: 1 });
+  const expectedBack = back.json?.win ? earned + 1 : earned - 1;
+  check("resurrected gambler bets with the earned dollars",
+    back.status === 200 && back.json.balance === expectedBack,
+    `balance=${back.json?.balance} earned=${earned} win=${back.json?.win}`);
 }
 
 console.log(failures === 0 ? "\nALL SMOKE TESTS PASSED" : `\n${failures} FAILURES`);

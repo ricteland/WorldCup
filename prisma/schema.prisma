@@ -25,8 +25,17 @@ model Player {
   isAdmin       Boolean  @default(false)
   createdAt     DateTime @default(now())
   /// Gambling-corner easter egg: roulette bankroll in whole dollars.
-  /// Everyone starts with $100; hitting $0 is permanent bankruptcy.
+  /// Everyone starts with $100; hitting $0 is bankruptcy (badge on the
+  /// leaderboard) — though new points quietly pay $1 each, see below.
   gambleBalance Int      @default(100)
+  /// Undocumented perk: every league point earned tops the bankroll up $1.
+  /// High-water mark of points already paid out; NULL = baseline not set yet
+  /// (it's initialized to the player's current total, so only points earned
+  /// after the feature shipped pay anything).
+  gambleCredited Int?
+  /// Ever hit $0 at the roulette table. Permanent: secret income may refill
+  /// the balance, but you're always a bad gambler.
+  gambleBusted  Boolean  @default(false)
 
   predictions ScorePred[]
   bracketPicks BracketPick[]

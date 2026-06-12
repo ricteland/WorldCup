@@ -66,6 +66,11 @@ export async function POST(req: Request) {
     select: { gambleBalance: true },
   });
   let balance = fresh?.gambleBalance ?? 0;
+  // hitting $0 brands the player forever — income may revive the balance
+  // later, but the leaderboard tag never comes off
+  if (!player.isAdmin && balance <= 0 && !player.gambleBusted) {
+    await prisma.player.update({ where: { id: player.id }, data: { gambleBusted: true } });
+  }
   let refilled = false;
   if (player.isAdmin && balance <= 0) {
     await prisma.player.update({

@@ -1,7 +1,14 @@
 import { getCurrentPlayer } from "@/lib/session";
 import { getConfig } from "@/lib/config";
 import { prisma } from "@/lib/db";
-import { getCore, derivePlayer, getRealProgress, realGroupTables, toMaps } from "@/lib/data";
+import {
+  getCore,
+  creditGamblingIncome,
+  derivePlayer,
+  getRealProgress,
+  realGroupTables,
+  toMaps,
+} from "@/lib/data";
 import {
   boostTeamId,
   computeBracketPoints,
@@ -41,6 +48,11 @@ export default async function ProfilePage() {
     perfectOrderGroups(derived.groupTables, real.tables, real.settledGroups).length *
     cfg.scoring.groupOrder;
 
+  // pay any pending secret income before showing the bankroll — the profile
+  // is where the gambling corner lives, so the balance must be fresh here
+  const total = matchPts.total + bracketPts.total + orderBonus;
+  const credited = await creditGamblingIncome(player, total);
+
   return (
     <ProfileView
       profile={{
@@ -48,10 +60,10 @@ export default async function ProfilePage() {
         recoveryUrl: `${cfg.appUrl}/me/${player.recoveryToken}`,
         matchPoints: matchPts.total,
         bracketPoints: bracketPts.total + orderBonus,
-        total: matchPts.total + bracketPts.total + orderBonus,
+        total,
         predictionsMade: preds.length,
         isAdmin: player.isAdmin,
-        gambleBalance: player.gambleBalance,
+        gambleBalance: player.gambleBalance + credited,
       }}
     />
   );

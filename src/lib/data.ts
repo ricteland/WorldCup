@@ -132,6 +132,35 @@ export function realGroupTables(core: Core): {
   return { tables, played, settledGroups };
 }
 
+/**
+ * Undocumented gambling-corner perk: every NEW league point earned quietly
+ * tops the bankroll up $1. `gambleCredited` is a high-water mark of points
+ * already paid out; NULL means the baseline hasn't been set — it's
+ * initialized to the player's current total so pre-existing points never
+ * pay. Points lost to corrections are never clawed back (and don't pay
+ * again when regained). Compare-and-swap guards against double-credits from
+ * concurrent requests. Returns the dollars just credited.
+ */
+export async function creditGamblingIncome(
+  player: { id: string; gambleCredited: number | null },
+  totalPoints: number
+): Promise<number> {
+  if (player.gambleCredited == null) {
+    await prisma.player.updateMany({
+      where: { id: player.id, gambleCredited: null },
+      data: { gambleCredited: totalPoints },
+    });
+    return 0;
+  }
+  const delta = totalPoints - player.gambleCredited;
+  if (delta <= 0) return 0;
+  const res = await prisma.player.updateMany({
+    where: { id: player.id, gambleCredited: player.gambleCredited },
+    data: { gambleCredited: totalPoints, gambleBalance: { increment: delta } },
+  });
+  return res.count > 0 ? delta : 0;
+}
+
 export interface LeaderboardRow {
   playerId: string;
   displayName: string;
@@ -139,7 +168,7 @@ export interface LeaderboardRow {
   bracketPoints: number;
   total: number;
   rank: number;
-  /** Lost the whole gambling-corner bankroll — wears the badge of shame. */
+  /** Ever lost the whole gambling-corner bankroll — the badge is permanent. */
   bankrupt: boolean;
 }
 
@@ -198,9 +227,16 @@ export async function getLeaderboard(): Promise<LeaderboardRow[]> {
       bracketPoints: bracketPts.total + orderBonus,
       total: matchPts.total + bracketPts.total + orderBonus,
       rank: 0,
-      bankrupt: pl.gambleBalance <= 0,
+      bankrupt: pl.gambleBusted,
     };
   });
+
+  // pay the secret per-point income: fresh points quietly refill bankrolls
+  // (the bankruptcy tag stays on regardless — once a bad gambler, always one)
+  for (const r of rows) {
+    const pl = players.find((p) => p.id === r.playerId)!;
+    await creditGamblingIncome(pl, r.total);
+  }
 
   // sort by total desc; equal totals fall back to a seeded "drawing of lots"
   // (random-looking but deterministic, so the order survives refreshes)
