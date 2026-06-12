@@ -353,6 +353,21 @@ console.log("12. gambling corner");
   const lb = await player.req("GET", "/api/leaderboard");
   const row = lb.json?.rows?.find((r) => r.displayName === name);
   check("bankruptcy badge on the leaderboard", row?.bankrupt === true, JSON.stringify(row));
+
+  // the admin's bankroll refills itself: all-in losses can never strand it at 0
+  let adminBalance = 1;
+  let refillSeen = false;
+  for (let i = 0; i < 10; i++) {
+    const r = await admin.req("POST", "/api/casino", {
+      bet: { type: "straight", number: 7 },
+      amount: adminBalance,
+    });
+    if (r.status !== 200) break;
+    adminBalance = r.json.balance;
+    if (r.json.refilled) refillSeen = true;
+  }
+  check("the house never goes broke (admin refilled)", adminBalance > 0 && refillSeen,
+    `balance=${adminBalance} refilled=${refillSeen}`);
 }
 
 console.log(failures === 0 ? "\nALL SMOKE TESTS PASSED" : `\n${failures} FAILURES`);

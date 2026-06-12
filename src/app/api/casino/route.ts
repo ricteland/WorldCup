@@ -26,13 +26,24 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Place a valid bet first" }, { status: 400 });
   }
 
-  if (player.gambleBalance <= 0) {
+  // the house never goes broke: the admin's bankroll refills itself $100 at
+  // a time, so bankruptcy (and its leaderboard badge) is for players only
+  let bankroll = player.gambleBalance;
+  if (player.isAdmin && bankroll <= 0) {
+    await prisma.player.update({
+      where: { id: player.id },
+      data: { gambleBalance: { increment: 100 } },
+    });
+    bankroll += 100;
+  }
+
+  if (bankroll <= 0) {
     return NextResponse.json(
-      { error: "You're bankrupt. The house thanks you for your patronage." },
+      { error: "You're bankrupt. No crying in the casino." },
       { status: 400 }
     );
   }
-  if ((amount as number) > player.gambleBalance) {
+  if ((amount as number) > bankroll) {
     return NextResponse.json({ error: "You can't bet more than you have" }, { status: 400 });
   }
 
@@ -54,11 +65,23 @@ export async function POST(req: Request) {
     where: { id: player.id },
     select: { gambleBalance: true },
   });
+  let balance = fresh?.gambleBalance ?? 0;
+  let refilled = false;
+  if (player.isAdmin && balance <= 0) {
+    await prisma.player.update({
+      where: { id: player.id },
+      data: { gambleBalance: { increment: 100 } },
+    });
+    balance += 100;
+    refilled = true;
+  }
+
   return NextResponse.json({
     roll,
     color: rollColor(roll),
     win,
     payout,
-    balance: fresh?.gambleBalance ?? 0,
+    balance,
+    refilled,
   });
 }

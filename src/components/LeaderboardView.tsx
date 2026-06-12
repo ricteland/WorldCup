@@ -53,10 +53,10 @@ export function LeaderboardView({ rows, you }: { rows: LeaderboardRow[]; you: st
                       </span>
                       {r.bankrupt && (
                         <span
-                          className="ml-1 cursor-default text-xs"
-                          title="Went bankrupt in the gambling corner"
+                          className="ml-1.5 cursor-default text-[10px] font-bold uppercase tracking-wide text-red-400"
+                          title="Went bankrupt in the gambling corner 🫵😂"
                         >
-                          💸
+                          bad gambler 2026
                         </span>
                       )}
                       {isYou && <span className="ml-1.5 text-[10px] text-pitch-400">you</span>}

@@ -7,7 +7,7 @@
 import { useRef, useState } from "react";
 import { Dices } from "lucide-react";
 import { cn } from "@/lib/cn";
-import { rollColor, type RouletteBet } from "@/lib/casino";
+import { payoutMultiplier, rollColor, type RouletteBet } from "@/lib/casino";
 import { Button, Card, Chip } from "./ui";
 
 interface SpinResult {
@@ -16,19 +16,26 @@ interface SpinResult {
   win: boolean;
   payout: number;
   balance: number;
+  /** Admin perk: the house refilled the bankroll after a bust. */
+  refilled?: boolean;
 }
 
-const OUTSIDE_BETS: { label: string; bet: RouletteBet }[] = [
+const EVEN_MONEY_BETS: { label: string; bet: RouletteBet }[] = [
   { label: "Red", bet: { type: "red" } },
   { label: "Black", bet: { type: "black" } },
   { label: "Even", bet: { type: "even" } },
   { label: "Odd", bet: { type: "odd" } },
   { label: "1–18", bet: { type: "low" } },
   { label: "19–36", bet: { type: "high" } },
+];
+
+const DOZEN_BETS: { label: string; bet: RouletteBet }[] = [
   { label: "1st 12", bet: { type: "dozen", dozen: 1 } },
   { label: "2nd 12", bet: { type: "dozen", dozen: 2 } },
   { label: "3rd 12", bet: { type: "dozen", dozen: 3 } },
 ];
+
+const OUTSIDE_BETS = [...EVEN_MONEY_BETS, ...DOZEN_BETS];
 
 const AMOUNTS = [1, 5, 10, 25];
 
@@ -111,11 +118,11 @@ export function GamblingCorner({ initialBalance }: { initialBalance: number }) {
 
       {bankrupt ? (
         <div className="space-y-1 rounded-xl bg-red-500/5 p-4 text-center ring-1 ring-red-500/20">
-          <div className="text-3xl">💸</div>
+          <div className="text-3xl">🫵😂</div>
           <p className="text-sm font-semibold text-red-300">Bankrupt.</p>
           <p className="text-xs text-slate-500">
-            You turned $100 into nothing. The badge of shame now follows your name on the
-            leaderboard. The house thanks you for your patronage.
+            You turned $100 into nothing. The whole league can see it on the leaderboard now.
+            No crying in the casino.
           </p>
         </div>
       ) : (
@@ -125,22 +132,32 @@ export function GamblingCorner({ initialBalance }: { initialBalance: number }) {
           </p>
 
           {/* outside bets */}
-          <div className="flex flex-wrap gap-1.5">
-            {OUTSIDE_BETS.map((o) => (
-              <button
-                key={o.label}
-                onClick={() => setBet(o.bet)}
-                className={cn(
-                  "rounded-full px-3 py-1.5 text-xs font-medium ring-1 transition",
-                  JSON.stringify(bet) === JSON.stringify(o.bet)
-                    ? "bg-gold-400/20 text-gold-300 ring-gold-400/50"
-                    : "bg-white/5 text-slate-400 ring-white/10 hover:text-slate-200"
-                )}
-              >
-                {o.label}
-              </button>
-            ))}
-          </div>
+          {(
+            [
+              ["even money (pays 1:1)", EVEN_MONEY_BETS],
+              ["dozens (pays 2:1)", DOZEN_BETS],
+            ] as const
+          ).map(([heading, options]) => (
+            <div key={heading}>
+              <p className="mb-1.5 text-[11px] uppercase tracking-wide text-slate-500">{heading}</p>
+              <div className="flex flex-wrap gap-1.5">
+                {options.map((o) => (
+                  <button
+                    key={o.label}
+                    onClick={() => setBet(o.bet)}
+                    className={cn(
+                      "rounded-full px-3 py-1.5 text-xs font-medium ring-1 transition",
+                      JSON.stringify(bet) === JSON.stringify(o.bet)
+                        ? "bg-gold-400/20 text-gold-300 ring-gold-400/50"
+                        : "bg-white/5 text-slate-400 ring-white/10 hover:text-slate-200"
+                    )}
+                  >
+                    {o.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
 
           {/* straight numbers, 35:1 */}
           <div>
@@ -211,7 +228,7 @@ export function GamblingCorner({ initialBalance }: { initialBalance: number }) {
                 {spinning
                   ? "No more bets…"
                   : bet
-                    ? `Spin — $${stake} on ${betLabel(bet)}`
+                    ? `Spin — $${stake} on ${betLabel(bet)} → +$${stake * (payoutMultiplier(bet) - 1)}`
                     : "Pick a bet"}
               </Button>
               {result && (
@@ -222,6 +239,11 @@ export function GamblingCorner({ initialBalance }: { initialBalance: number }) {
                   )}
                 >
                   {result.win ? `You win $${result.payout - stake}! 🎉` : `Lost $${stake}.`}
+                  {result.refilled && (
+                    <span className="block font-normal text-gold-300/80">
+                      …but the house refills its own pockets. +$100
+                    </span>
+                  )}
                 </p>
               )}
               {error && <p className="text-center text-xs text-red-400">{error}</p>}
