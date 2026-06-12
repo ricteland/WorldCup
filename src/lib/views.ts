@@ -6,6 +6,7 @@ import { getConfig, isMatchLocked, matchLockAt } from "./config";
 import { getCore, derivePlayer, getRealProgress, toMaps } from "./data";
 import { gradeScore, type Grade } from "./grade";
 import {
+  advanceRoundOfMatch,
   boostTeamId,
   gradeBracketSlot,
   koOpenAndStale,
@@ -126,6 +127,113 @@ export async function getMatchesView(playerId: string): Promise<MatchesPayload> 
   });
 
   return { lockMinutes: cfg.lockMinutes, manualLock: cfg.predictionsLocked, matches };
+}
+
+// ---------------------------------------------------------------------------
+// Single-match league view: everyone's pick for one match. Only assembled for
+// LIVE/FINISHED matches — until kickoff, other players' predictions stay
+// private (the matches API never serves them).
+// ---------------------------------------------------------------------------
+
+export interface MatchLeagueRowView {
+  playerId: string;
+  name: string;
+  isYou: boolean;
+  pred: {
+    homeScore: number;
+    awayScore: number;
+    /** Winner pick on a drawn knockout score, resolved to a team. */
+    winner: TeamView | null;
+  } | null;
+  /** Knockout pick made against a matchup reality no longer matches. */
+  stale: boolean;
+  grade: Grade;
+  /** Match points (exact/result × boost), 0 until the match is finished. */
+  points: number;
+  /** Advance-bonus points this match's result decided (knockouts only). */
+  bonus: number;
+}
+
+export interface MatchLeaguePayload {
+  matchId: number;
+  status: string;
+  finished: boolean;
+  rows: MatchLeagueRowView[];
+}
+
+export async function getMatchLeagueView(
+  matchId: number,
+  viewerId: string
+): Promise<MatchLeaguePayload | "hidden" | null> {
+  const core = await getCore();
+  const m = core.matches.find((x) => x.id === matchId);
+  if (!m) return null;
+  if (m.status !== "LIVE" && m.status !== "FINISHED") return "hidden";
+
+  const [cfg, players, preds] = await Promise.all([
+    getConfig(),
+    prisma.player.findMany({ where: { isAdmin: false }, orderBy: { displayName: "asc" } }),
+    prisma.scorePred.findMany({ where: { matchId } }),
+  ]);
+  const predByPlayer = new Map(preds.map((p) => [p.playerId, p]));
+  const boosted = matchInvolves(m, boostTeamId(cfg.scoring, core.teams));
+  const finished = m.status === "FINISHED" && m.homeScore != null && m.awayScore != null;
+  const { winner: realWinner } = realWinnerLoser(m);
+  const advanceRound = m.stage === "GROUP" ? null : advanceRoundOfMatch(m.id);
+
+  const rows = players.map((pl): MatchLeagueRowView => {
+    const p = predByPlayer.get(pl.id);
+    // same snapshot rule as computeMatchPoints: a KO pred made against a
+    // matchup that has since changed is not graded
+    const stale =
+      !!p &&
+      !!(p.predHomeTeamId || p.predAwayTeamId) &&
+      ((p.predHomeTeamId ?? null) !== (m.homeTeamId ?? null) ||
+        (p.predAwayTeamId ?? null) !== (m.awayTeamId ?? null));
+    const grade: Grade =
+      finished && !stale
+        ? gradeScore(p, { homeScore: m.homeScore!, awayScore: m.awayScore! })
+        : "PENDING";
+    // a knockout result settles the advance bonus for everyone who picked its
+    // winner — attribute those points to this match's leaderboard
+    let bonus = 0;
+    if (p && !stale && advanceRound && realWinner && m.homeTeamId && m.awayTeamId) {
+      const picked = predictedKoWinner(
+        { homeScore: p.homeScore, awayScore: p.awayScore, winnerTeamId: p.predWinnerTeamId },
+        m.homeTeamId,
+        m.awayTeamId
+      );
+      if (picked === realWinner) bonus = cfg.scoring.bracket[advanceRound];
+    }
+    return {
+      playerId: pl.id,
+      name: pl.displayName,
+      isYou: pl.id === viewerId,
+      pred: p
+        ? {
+            homeScore: p.homeScore,
+            awayScore: p.awayScore,
+            winner: teamView(p.predWinnerTeamId ? core.teamById.get(p.predWinnerTeamId) : null),
+          }
+        : null,
+      stale,
+      grade,
+      points: matchPointsFor(grade, cfg.scoring, boosted),
+      bonus,
+    };
+  });
+
+  if (finished) {
+    const gradeOrder: Record<Grade, number> = { EXACT: 0, RESULT: 1, WRONG: 2, PENDING: 3 };
+    rows.sort(
+      (a, b) =>
+        b.points + b.bonus - (a.points + a.bonus) ||
+        gradeOrder[a.grade] - gradeOrder[b.grade] ||
+        a.name.localeCompare(b.name)
+    );
+  }
+
+  return { matchId, status: m.status, finished, rows };
 }
 
 // ---------------------------------------------------------------------------

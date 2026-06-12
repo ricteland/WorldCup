@@ -222,6 +222,40 @@ console.log("8. scoring: match points + advance bonuses");
   }
 }
 
+console.log("8b. per-match league view (everyone's picks)");
+{
+  const anon = await client().req("GET", "/api/matches/73/predictions");
+  check("league view requires sign-in", anon.status === 401);
+  const unknown = await player.req("GET", "/api/matches/99999/predictions");
+  check("unknown match is 404", unknown.status === 404);
+  // M75 is predicted (2–0 in section 6) but still SCHEDULED — picks stay private
+  const hidden = await player.req("GET", "/api/matches/75/predictions");
+  check("picks hidden while the match is scheduled", hidden.status === 403);
+
+  // live: picks visible, nothing graded yet
+  await admin.req("POST", "/api/admin/match", { matchId: 75, status: "LIVE" });
+  const live = await player.req("GET", "/api/matches/75/predictions");
+  const liveRow = live.json?.rows?.find((r) => r.name === name);
+  check("picks served once the match is live", live.status === 200 && live.json?.finished === false);
+  check("own live pick visible and ungraded",
+    liveRow?.isYou === true && liveRow?.pred?.homeScore === 2 && liveRow?.grade === "PENDING" && liveRow?.points === 0,
+    JSON.stringify(liveRow));
+  await admin.req("POST", "/api/admin/match", { matchId: 75, status: "SCHEDULED" });
+
+  // finished: M73 ended 1–1 with the away side through on pens — exactly the
+  // player's pick, so EXACT match points plus the R16 advance bonus
+  const fin = await player.req("GET", "/api/matches/73/predictions");
+  const finRow = fin.json?.rows?.find((r) => r.name === name);
+  check("finished match serves a single-game leaderboard", fin.status === 200 && fin.json?.finished === true);
+  check("exact pick graded with points", finRow?.grade === "EXACT" && finRow?.points > 0, JSON.stringify(finRow));
+  check("advance bonus attributed to the deciding match", finRow?.bonus > 0, `bonus=${finRow?.bonus}`);
+  check("draw pick shows the winner pick", finRow?.pred?.winner?.id === away73, JSON.stringify(finRow?.pred));
+  const sorted = fin.json.rows.every(
+    (r, i, a) => i === 0 || a[i - 1].points + a[i - 1].bonus >= r.points + r.bonus
+  );
+  check("leaderboard sorted by points", sorted);
+}
+
 console.log("9. matchup change flags the pick stale");
 {
   const m89 = matches.find((m) => m.id === 89);

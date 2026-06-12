@@ -8,7 +8,7 @@ import { useRouter } from "next/navigation";
 import { ChevronDown, LockKeyhole, Minus, Plus, AlertTriangle, MapPin } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { GRADE_BADGE, GRADE_CARD } from "@/lib/grade";
-import type { MatchesPayload, MatchView, TeamView } from "@/lib/views";
+import type { MatchesPayload, MatchLeaguePayload, MatchView, TeamView } from "@/lib/views";
 import { Button, Chip } from "./ui";
 import { LocalTime } from "./LocalTime";
 import { LockCountdown } from "./LockCountdown";
@@ -193,8 +193,106 @@ export function MatchEditor({
   );
 }
 
+// Everyone's pick for one match, fetched when the card is expanded. While the
+// match is live it's just the picks; once finished it becomes a ranked
+// single-game leaderboard with the points each pick earned.
+function LeaguePanel({ match }: { match: MatchView }) {
+  const [data, setData] = useState<MatchLeaguePayload | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  // Refetch when the result moves (live score ticks, status flips to
+  // FINISHED) so an open panel keeps up with router.refresh().
+  const resultKey = `${match.status}:${match.homeScore}-${match.awayScore}`;
+  useEffect(() => {
+    let on = true;
+    fetch(`/api/matches/${match.id}/predictions`)
+      .then(async (res) => {
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          throw new Error(body.error ?? "Could not load predictions");
+        }
+        return res.json() as Promise<MatchLeaguePayload>;
+      })
+      .then((d) => {
+        if (on) {
+          setData(d);
+          setError(null);
+        }
+      })
+      .catch((e: Error) => on && setError(e.message));
+    return () => {
+      on = false;
+    };
+  }, [match.id, resultKey]);
+
+  if (error) return <p className="mt-3 text-center text-xs text-red-400">{error}</p>;
+  if (!data) return <p className="mt-3 text-center text-xs text-slate-500">Loading picks…</p>;
+
+  const finished = data.finished;
+  let rank = 0;
+  let prevTotal = -1;
+
+  return (
+    <div className="mt-3 space-y-1 border-t border-white/10 pt-3">
+      <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+        {finished ? "Match leaderboard" : "League predictions"}
+      </p>
+      {data.rows.map((r, i) => {
+        const total = r.points + r.bonus;
+        if (finished && total !== prevTotal) {
+          rank = i + 1;
+          prevTotal = total;
+        }
+        const drawPick = r.pred && r.pred.homeScore === r.pred.awayScore ? r.pred.winner : null;
+        return (
+          <div
+            key={r.playerId}
+            className={cn(
+              "flex items-center justify-between gap-2 rounded-xl px-2.5 py-1.5",
+              r.isYou ? "bg-pitch-500/10 ring-1 ring-pitch-500/30" : "bg-white/[0.03]"
+            )}
+          >
+            <span className="min-w-0 truncate text-xs font-medium text-slate-200">
+              {finished && <span className="mr-1.5 text-slate-500">{rank}.</span>}
+              {r.name}
+              {r.isYou && <span className="text-pitch-300"> (you)</span>}
+            </span>
+            <span className="flex shrink-0 items-center gap-1.5">
+              {r.stale && <AlertTriangle size={12} className="text-gold-300" />}
+              {r.pred ? (
+                <Chip className={GRADE_BADGE[finished ? r.grade : "PENDING"]}>
+                  {r.pred.homeScore}–{r.pred.awayScore}
+                  {drawPick && ` · ${drawPick.flag} ${drawPick.code}`}
+                </Chip>
+              ) : (
+                <span className="text-[11px] text-slate-600">no prediction</span>
+              )}
+              {finished && r.bonus > 0 && (
+                <Chip className="bg-gold-400/10 text-gold-300 ring-1 ring-gold-400/30">
+                  adv +{r.bonus}
+                </Chip>
+              )}
+              {finished && (
+                <span
+                  className={cn(
+                    "font-display w-9 text-right text-sm font-bold",
+                    total > 0 ? "text-slate-100" : "text-slate-600"
+                  )}
+                >
+                  +{total}
+                </span>
+              )}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function MatchCard({ match }: { match: MatchView }) {
   const [openEditor, setOpenEditor] = useState(false);
+  const [openLeague, setOpenLeague] = useState(false);
   const isKo = match.stage !== "GROUP";
   // prefer reality once knockout participants are official
   const homeTeam = isKo ? (match.home ?? match.predHome) : match.home;
@@ -203,6 +301,8 @@ function MatchCard({ match }: { match: MatchView }) {
   const liveScore =
     match.status === "LIVE" && match.homeScore != null && match.awayScore != null;
   const canEdit = !match.locked && match.open && !finished;
+  // once a match is underway, tapping it reveals the whole league's picks
+  const canPeek = !canEdit && (match.status === "LIVE" || finished);
 
   return (
     <div
@@ -244,7 +344,10 @@ function MatchCard({ match }: { match: MatchView }) {
       <button
         type="button"
         className="flex w-full items-center gap-2"
-        onClick={() => canEdit && setOpenEditor((v) => !v)}
+        onClick={() => {
+          if (canEdit) setOpenEditor((v) => !v);
+          else if (canPeek) setOpenLeague((v) => !v);
+        }}
       >
         <TeamSide team={homeTeam} label={match.homeSlotLabel} align="left" />
 
@@ -275,10 +378,13 @@ function MatchCard({ match }: { match: MatchView }) {
               –:–
             </div>
           )}
-          {canEdit && (
+          {(canEdit || canPeek) && (
             <ChevronDown
               size={14}
-              className={cn("mt-1 text-slate-500 transition-transform", openEditor && "rotate-180")}
+              className={cn(
+                "mt-1 text-slate-500 transition-transform",
+                (canEdit ? openEditor : openLeague) && "rotate-180"
+              )}
             />
           )}
         </div>
@@ -293,6 +399,8 @@ function MatchCard({ match }: { match: MatchView }) {
       )}
 
       {openEditor && canEdit && <MatchEditor match={match} onSaved={() => setOpenEditor(false)} />}
+
+      {openLeague && canPeek && <LeaguePanel match={match} />}
     </div>
   );
 }
