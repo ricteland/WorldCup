@@ -51,6 +51,7 @@ export default async function ProfilePage() {
         total: matchPts.total + bracketPts.total + orderBonus,
         predictionsMade: preds.length,
         isAdmin: player.isAdmin,
+        gambleBalance: player.gambleBalance,
       }}
     />
   );

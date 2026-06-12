@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Link2, Pencil } from "lucide-react";
 import { Button, Card, Input } from "./ui";
 import { CopyButton } from "./CopyButton";
+import { GamblingCorner } from "./GamblingCorner";
 
 export interface ProfileData {
   displayName: string;
@@ -14,6 +15,7 @@ export interface ProfileData {
   total: number;
   predictionsMade: number;
   isAdmin: boolean;
+  gambleBalance: number;
 }
 
 export function ProfileView({ profile }: { profile: ProfileData }) {
@@ -103,6 +105,8 @@ export function ProfileView({ profile }: { profile: ProfileData }) {
         </div>
         <CopyButton text={profile.recoveryUrl} label="Copy link" />
       </Card>
+
+      <GamblingCorner initialBalance={profile.gambleBalance} />
     </div>
   );
 }

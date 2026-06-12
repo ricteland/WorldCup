@@ -51,6 +51,14 @@ export function LeaderboardView({ rows, you }: { rows: LeaderboardRow[]; you: st
                       <span className={cn("font-semibold", isYou ? "text-pitch-300" : "text-slate-200")}>
                         {r.displayName}
                       </span>
+                      {r.bankrupt && (
+                        <span
+                          className="ml-1 cursor-default text-xs"
+                          title="Went bankrupt in the gambling corner"
+                        >
+                          💸
+                        </span>
+                      )}
                       {isYou && <span className="ml-1.5 text-[10px] text-pitch-400">you</span>}
                     </td>
                     <td className="py-2.5 text-center text-slate-400">{r.matchPoints}</td>

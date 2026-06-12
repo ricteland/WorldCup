@@ -324,5 +324,36 @@ console.log("11. admin deletes a player");
   check("admin accounts can't be deleted", self.status === 400);
 }
 
+console.log("12. gambling corner");
+{
+  const anon = await client().req("POST", "/api/casino", { bet: { type: "red" }, amount: 5 });
+  check("casino requires sign-in", anon.status === 401);
+  const badBet = await player.req("POST", "/api/casino", { bet: { type: "straight", number: 99 }, amount: 5 });
+  check("malformed bet rejected", badBet.status === 400);
+  const tooMuch = await player.req("POST", "/api/casino", { bet: { type: "red" }, amount: 101 });
+  check("can't bet more than the balance", tooMuch.status === 400);
+
+  const spin = await player.req("POST", "/api/casino", { bet: { type: "red" }, amount: 10 });
+  const okSpin = spin.status === 200 && spin.json.roll >= 0 && spin.json.roll <= 36;
+  check("spin returns a roll and the new balance", okSpin, JSON.stringify(spin.json));
+  const expected = spin.json.win ? 100 + 10 : 100 - 10;
+  check("balance moves by the stake", spin.json.balance === expected,
+    `win=${spin.json.win} balance=${spin.json.balance}`);
+
+  // ruin the player: all-in on a single number until the inevitable
+  // (chance of surviving 30 straight all-ins is (1/37)^n ≈ never)
+  let balance = spin.json.balance;
+  for (let i = 0; i < 30 && balance > 0; i++) {
+    const r = await player.req("POST", "/api/casino", { bet: { type: "straight", number: 13 }, amount: balance });
+    balance = r.json?.balance ?? balance;
+  }
+  check("the house always wins", balance === 0, `balance=${balance}`);
+  const broke = await player.req("POST", "/api/casino", { bet: { type: "red" }, amount: 1 });
+  check("no betting once bankrupt", broke.status === 400);
+  const lb = await player.req("GET", "/api/leaderboard");
+  const row = lb.json?.rows?.find((r) => r.displayName === name);
+  check("bankruptcy badge on the leaderboard", row?.bankrupt === true, JSON.stringify(row));
+}
+
 console.log(failures === 0 ? "\nALL SMOKE TESTS PASSED" : `\n${failures} FAILURES`);
 process.exit(failures === 0 ? 0 : 1);

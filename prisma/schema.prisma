@@ -24,6 +24,9 @@ model Player {
   recoveryToken String   @unique
   isAdmin       Boolean  @default(false)
   createdAt     DateTime @default(now())
+  /// Gambling-corner easter egg: roulette bankroll in whole dollars.
+  /// Everyone starts with $100; hitting $0 is permanent bankruptcy.
+  gambleBalance Int      @default(100)
 
   predictions ScorePred[]
   bracketPicks BracketPick[]

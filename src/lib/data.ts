@@ -139,6 +139,8 @@ export interface LeaderboardRow {
   bracketPoints: number;
   total: number;
   rank: number;
+  /** Lost the whole gambling-corner bankroll — wears the badge of shame. */
+  bankrupt: boolean;
 }
 
 /**
@@ -196,6 +198,7 @@ export async function getLeaderboard(): Promise<LeaderboardRow[]> {
       bracketPoints: bracketPts.total + orderBonus,
       total: matchPts.total + bracketPts.total + orderBonus,
       rank: 0,
+      bankrupt: pl.gambleBalance <= 0,
     };
   });
 
