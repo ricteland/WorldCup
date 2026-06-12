@@ -1,8 +1,13 @@
 import { getCurrentPlayer } from "@/lib/session";
 import { getConfig } from "@/lib/config";
 import { prisma } from "@/lib/db";
-import { getCore, derivePlayer, getRealProgress, toMaps } from "@/lib/data";
-import { boostTeamId, computeBracketPoints, computeMatchPoints } from "@/lib/scoring";
+import { getCore, derivePlayer, getRealProgress, realGroupTables, toMaps } from "@/lib/data";
+import {
+  boostTeamId,
+  computeBracketPoints,
+  computeMatchPoints,
+  perfectOrderGroups,
+} from "@/lib/scoring";
 import { ProfileView } from "@/components/ProfileView";
 
 export const dynamic = "force-dynamic";
@@ -31,6 +36,10 @@ export default async function ProfilePage() {
     progress,
     cfg: cfg.scoring,
   });
+  const real = realGroupTables(core);
+  const orderBonus =
+    perfectOrderGroups(derived.groupTables, real.tables, real.settledGroups).length *
+    cfg.scoring.groupOrder;
 
   return (
     <ProfileView
@@ -38,8 +47,8 @@ export default async function ProfilePage() {
         displayName: player.displayName,
         recoveryUrl: `${cfg.appUrl}/me/${player.recoveryToken}`,
         matchPoints: matchPts.total,
-        bracketPoints: bracketPts.total,
-        total: matchPts.total + bracketPts.total,
+        bracketPoints: bracketPts.total + orderBonus,
+        total: matchPts.total + bracketPts.total + orderBonus,
         predictionsMade: preds.length,
         isAdmin: player.isAdmin,
       }}

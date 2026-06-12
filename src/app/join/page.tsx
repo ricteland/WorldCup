@@ -14,7 +14,8 @@ export default async function JoinPage() {
         <Logo size={72} />
         <Wordmark />
         <p className="max-w-xs text-sm text-slate-400">
-          Predict all 104 matches of the 2026 World Cup. Build your bracket. Beat your friends.
+          The 2026 World Cup, called in advance. Predict the groups, conquer the bracket round
+          by round, beat your friends. ¡Vamos!
         </p>
       </div>
       <Suspense>

@@ -20,6 +20,8 @@ export interface ScoringConfig {
   exact: number;
   /** Right result, wrong score. */
   result: number;
+  /** Bonus per group whose final order was predicted exactly (1st→4th). */
+  groupOrder: number;
   bracket: Record<ScoringRound, number>;
   /** Match points are multiplied when this team plays (the league is Spanish). */
   boostTeamCode: string | null;
@@ -29,6 +31,7 @@ export interface ScoringConfig {
 export const DEFAULT_SCORING: ScoringConfig = {
   exact: 5,
   result: 3,
+  groupOrder: 3,
   bracket: { R32: 1, R16: 2, QF: 4, SF: 6, FINAL: 8, CHAMPION: 12 },
   boostTeamCode: "ESP",
   boostMultiplier: 3,
@@ -329,6 +332,26 @@ export function computeBracketPoints(input: {
   let total = 0;
   for (const r of SCORING_ROUNDS) total += byRound[r];
   return { total, byRound };
+}
+
+/**
+ * Group names whose predicted final order (1st→4th) matches the real one
+ * exactly — judged group by group as each real group is settled. Worth
+ * cfg.groupOrder bonus points apiece.
+ */
+export function perfectOrderGroups(
+  predTables: Record<string, { teamId: string }[]>,
+  realTables: Record<string, { teamId: string }[]>,
+  settledGroups: Iterable<string>
+): string[] {
+  const out: string[] = [];
+  for (const g of settledGroups) {
+    const pred = predTables[g];
+    const real = realTables[g];
+    if (!pred || !real || pred.length !== real.length) continue;
+    if (pred.every((row, i) => row.teamId === real[i].teamId)) out.push(g);
+  }
+  return out.sort();
 }
 
 /**

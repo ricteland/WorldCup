@@ -214,9 +214,10 @@ console.log("8. scoring: match points + advance bonuses");
 
   if (cleanGroups) {
     // predicted tables == real tables → all 32 qualifiers right (32 × 1pt),
-    // plus three R32 winners through: 73 (pens pick), 74, 77 (3 × 2pts)
-    check("bracket points = 32 R32 bonus + 3 advance bonuses", row?.bracketPoints === 38,
-      `got ${row?.bracketPoints}`);
+    // every group's exact order called (12 × 3pts), plus three R32 winners
+    // through: 73 (pens pick), 74, 77 (3 × 2pts)
+    check("bracket points = R32 bonus + exact-order bonus + advance bonuses",
+      row?.bracketPoints === 32 + 36 + 6, `got ${row?.bracketPoints}`);
   } else {
     check("advance bonuses awarded", row?.bracketPoints >= 6, `got ${row?.bracketPoints}`);
   }

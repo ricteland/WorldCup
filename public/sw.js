@@ -3,7 +3,7 @@
 // rebuilds, so serving them from cache hands old JS to a new server (hydration
 // mismatches). Online, the browser's HTTP cache already handles immutable
 // production chunks; the SW cache only needs to cover offline.
-const CACHE = "wc26-v3";
+const CACHE = "wc26-v4";
 const STATIC = [
   "/assets/icon-192.png",
   "/assets/icon-512.png",

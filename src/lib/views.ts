@@ -3,7 +3,7 @@
 
 import { prisma } from "./db";
 import { getConfig, isMatchLocked, matchLockAt } from "./config";
-import { getCore, derivePlayer, getRealProgress, toMaps } from "./data";
+import { getCore, derivePlayer, getRealProgress, realGroupTables, toMaps } from "./data";
 import { gradeScore, type Grade } from "./grade";
 import {
   advanceRoundOfMatch,
@@ -12,10 +12,11 @@ import {
   koOpenAndStale,
   matchInvolves,
   matchPointsFor,
+  perfectOrderGroups,
   predictedKoWinner,
   realWinnerLoser,
 } from "./scoring";
-import { computeTable, rankThirds, type TableRow } from "./standings";
+import { computeTable, rankThirds } from "./standings";
 import { slotKey, roundOfMatch, CHAMPION_SLOT, KO_MATCH_NUMS } from "./bracket";
 import type { Team } from "@prisma/client";
 
@@ -259,6 +260,8 @@ export interface GroupView {
   name: string;
   complete: boolean;
   predsMade: number;
+  /** The real group is settled and the player called its exact 1st→4th order. */
+  orderPerfect: boolean;
   rows: GroupRowView[];
 }
 
@@ -269,14 +272,17 @@ export interface GroupsPayload {
   qualifiedThirdGroups: string[] | null;
   realQualifiedThirdGroups: string[] | null;
   realFinal: boolean;
+  /** Bonus points per exactly-ordered group (scoring.groupOrder). */
+  orderBonus: number;
 }
 
 export async function getGroupsView(playerId: string): Promise<GroupsPayload> {
   const core = await getCore();
-  const [derived, progress, preds] = await Promise.all([
+  const [derived, progress, preds, cfg] = await Promise.all([
     derivePlayer(playerId, core),
     getRealProgress(core),
     prisma.scorePred.findMany({ where: { playerId, matchId: { lte: 72 } } }),
+    getConfig(),
   ]);
   const predByMatch = new Map(
     preds.map((p) => [p.matchId, { homeScore: p.homeScore, awayScore: p.awayScore }])
@@ -284,24 +290,9 @@ export async function getGroupsView(playerId: string): Promise<GroupsPayload> {
 
   // Real tables computed live from finished matches — they feed the "Real"
   // view as the tournament unfolds and the correctness overlay once final.
-  const realTables: Record<string, TableRow[]> = {};
-  const realPlayed: Record<string, number> = {};
-  for (const g of Object.keys(core.teamsByGroup)) {
-    const finished = core.matches.filter(
-      (m) => m.groupName === g && m.status === "FINISHED" && m.homeScore != null
-    );
-    realPlayed[g] = finished.length;
-    realTables[g] = computeTable(
-      core.teamsByGroup[g],
-      finished.map((m) => ({
-        homeTeamId: m.homeTeamId!,
-        awayTeamId: m.awayTeamId!,
-        homeScore: m.homeScore!,
-        awayScore: m.awayScore!,
-      })),
-      { lotsSeed: "real" }
-    );
-  }
+  const { tables: realTables, played: realPlayed, settledGroups } = realGroupTables(core);
+  // settled groups whose exact 1st→4th order the player called → gold + bonus
+  const perfect = new Set(perfectOrderGroups(derived.groupTables, realTables, settledGroups));
 
   // Real best thirds are only knowable once every group has finished.
   let realQualifiedThirdGroups: string[] | null = null;
@@ -344,7 +335,7 @@ export async function getGroupsView(playerId: string): Promise<GroupsPayload> {
           grade: "PENDING",
         })
       );
-      return { name: g, complete, predsMade: realPlayed[g], rows };
+      return { name: g, complete, predsMade: realPlayed[g], orderPerfect: false, rows };
     });
 
   const qualifiedThirds = new Set(derived.qualifiedThirdGroups ?? []);
@@ -395,7 +386,7 @@ export async function getGroupsView(playerId: string): Promise<GroupsPayload> {
           grade,
         };
       });
-      return { name: g, complete, predsMade: scored.length, rows };
+      return { name: g, complete, predsMade: scored.length, orderPerfect: perfect.has(g), rows };
     });
 
   return {
@@ -404,6 +395,7 @@ export async function getGroupsView(playerId: string): Promise<GroupsPayload> {
     qualifiedThirdGroups: derived.qualifiedThirdGroups,
     realQualifiedThirdGroups,
     realFinal: progress.groupsFinal,
+    orderBonus: cfg.scoring.groupOrder,
   };
 }
 

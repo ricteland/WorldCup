@@ -14,11 +14,11 @@ const display = Space_Grotesk({
 });
 
 export const metadata: Metadata = {
-  title: "WC26 Predictor",
-  description: "Predict every match of the 2026 World Cup against your friends",
+  title: "VAMOS2026",
+  description: "The 2026 World Cup, predicted with friends. ¡Vamos!",
   manifest: "/manifest.webmanifest",
   icons: { icon: "/assets/icon-192.png", apple: "/assets/icon-192.png" },
-  appleWebApp: { capable: true, statusBarStyle: "black-translucent", title: "WC26" },
+  appleWebApp: { capable: true, statusBarStyle: "black-translucent", title: "VAMOS2026" },
 };
 
 export const viewport: Viewport = {

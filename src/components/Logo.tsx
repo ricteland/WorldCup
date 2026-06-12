@@ -1,7 +1,7 @@
-// PLACEHOLDER LOGO — swap for the real artwork.
-// Drop the official/your-own logo at public/assets/logo.svg (and matching
-// icon-192.png / icon-512.png) and replace this component's contents with
-// an <Image>. Kept as inline SVG so the app ships without binary assets.
+// VAMOS2026 mark: a little World Cup trophy whose globe is a football, in
+// fiesta red→gold (the league is Spanish, after all). Inline SVG so the app
+// ships without binary assets — drop real artwork at public/assets/logo.svg
+// and swap this for an <Image> if the league ever commissions one.
 
 export function Logo({ size = 36 }: { size?: number }) {
   return (
@@ -10,29 +10,33 @@ export function Logo({ size = 36 }: { size?: number }) {
       height={size}
       viewBox="0 0 64 64"
       fill="none"
-      aria-label="World Cup 2026 logo placeholder"
+      aria-label="VAMOS2026 logo"
       role="img"
     >
       <defs>
-        <linearGradient id="lg" x1="0" y1="0" x2="64" y2="64">
-          <stop offset="0%" stopColor="#34d399" />
-          <stop offset="55%" stopColor="#10b981" />
+        <linearGradient id="vamos-lg" x1="0" y1="0" x2="64" y2="64">
+          <stop offset="0%" stopColor="#ef4444" />
+          <stop offset="50%" stopColor="#f59e0b" />
           <stop offset="100%" stopColor="#f5c842" />
         </linearGradient>
       </defs>
-      <circle cx="32" cy="32" r="29" stroke="url(#lg)" strokeWidth="3.5" />
-      {/* stylized football pentagon */}
+      {/* cup handles */}
       <path
-        d="M32 18l11 8-4.2 13H25.2L21 26l11-8z"
-        fill="url(#lg)"
-        opacity="0.9"
-      />
-      <path
-        d="M32 18v-7M43 26l7-3M38.8 39l4 6M25.2 39l-4 6M21 26l-7-3"
-        stroke="url(#lg)"
-        strokeWidth="2.5"
+        d="M15 26c-7 0-7 10 1 11M49 26c7 0 7 10-1 11"
+        stroke="url(#vamos-lg)"
+        strokeWidth="3"
         strokeLinecap="round"
       />
+      {/* filled bowl, stem, base */}
+      <path d="M15 24h34c0 12-7.5 20-17 20s-17-8-17-20z" fill="url(#vamos-lg)" />
+      <rect x="29.5" y="43" width="5" height="7" rx="1.5" fill="url(#vamos-lg)" />
+      <rect x="21" y="50.5" width="22" height="6" rx="2.5" fill="url(#vamos-lg)" />
+      {/* football resting in the cup's mouth */}
+      <circle cx="32" cy="17" r="10" fill="#060a13" stroke="url(#vamos-lg)" strokeWidth="3" />
+      <path d="M32 11l5.5 4-2.1 6.5h-6.8L26.5 15l5.5-4z" fill="url(#vamos-lg)" opacity="0.9" />
+      {/* confetti sparkles */}
+      <path d="M53 7l1.4 3.6L58 12l-3.6 1.4L53 17l-1.4-3.6L48 12l3.6-1.4L53 7z" fill="#f5c842" />
+      <path d="M9 12l1 2.6 2.6 1-2.6 1-1 2.6-1-2.6L5.4 16.6l2.6-1 1-2.6z" fill="#ef4444" opacity="0.85" />
     </svg>
   );
 }
@@ -40,13 +44,12 @@ export function Logo({ size = 36 }: { size?: number }) {
 export function Wordmark() {
   return (
     <span className="font-display text-lg font-bold tracking-tight">
-      <span className="text-slate-100">WC</span>
-      <span className="bg-gradient-to-r from-pitch-400 to-gold-400 bg-clip-text text-transparent">
-        26
+      <span className="text-slate-400">¡</span>
+      <span className="bg-gradient-to-r from-red-500 via-gold-400 to-pitch-400 bg-clip-text text-transparent">
+        VAMOS
       </span>
-      <span className="ml-1.5 text-[11px] font-medium uppercase tracking-[0.2em] text-slate-400">
-        Predictor
-      </span>
+      <span className="text-slate-100">2026</span>
+      <span className="text-slate-400">!</span>
     </span>
   );
 }

@@ -97,9 +97,10 @@ export function WelcomeProvider({
               <div>
                 <h3 className="mb-1.5 font-semibold text-slate-100">Bracket points</h3>
                 <p className="mb-1.5 text-xs text-slate-400">
-                  R32: +{scoring.bracket.R32} per team your group tables correctly send through.
-                  Later rounds: when the winner you picked in a knockout game really goes
-                  through, you earn the round they advance to:
+                  R32: +{scoring.bracket.R32} per team your group tables correctly send through,
+                  and +{scoring.groupOrder} per settled group whose final order (1st→4th) you
+                  called exactly. Later rounds: when the winner you picked in a knockout game
+                  really goes through, you earn the round they advance to:
                 </p>
                 <div className="grid grid-cols-3 gap-1.5 text-center">
                   {Object.entries(scoring.bracket).map(([round, pts]) => (

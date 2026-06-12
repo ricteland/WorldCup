@@ -3,13 +3,14 @@
 
 import { prisma } from "./db";
 import { getConfig } from "./config";
-import { lotsHash } from "./standings";
+import { computeTable, lotsHash, type TableRow } from "./standings";
 import { deriveBracket, type DeriveResult } from "./bracket";
 import {
   boostTeamId,
   computeBracketPoints,
   computeMatchPoints,
   computeRealProgress,
+  perfectOrderGroups,
   type KoPredEntry,
   type RealProgress,
 } from "./scoring";
@@ -99,6 +100,38 @@ export async function getRealProgress(core?: Core): Promise<RealProgress> {
   });
 }
 
+/**
+ * Real group tables computed live from finished matches (lots seeded "real"),
+ * plus which groups are settled (all 6 games played). Shared by the Groups
+ * tab and the exact-order bonus.
+ */
+export function realGroupTables(core: Core): {
+  tables: Record<string, TableRow[]>;
+  played: Record<string, number>;
+  settledGroups: string[];
+} {
+  const tables: Record<string, TableRow[]> = {};
+  const played: Record<string, number> = {};
+  for (const g of Object.keys(core.teamsByGroup)) {
+    const finished = core.matches.filter(
+      (m) => m.groupName === g && m.status === "FINISHED" && m.homeScore != null
+    );
+    played[g] = finished.length;
+    tables[g] = computeTable(
+      core.teamsByGroup[g],
+      finished.map((m) => ({
+        homeTeamId: m.homeTeamId!,
+        awayTeamId: m.awayTeamId!,
+        homeScore: m.homeScore!,
+        awayScore: m.awayScore!,
+      })),
+      { lotsSeed: "real" }
+    );
+  }
+  const settledGroups = Object.keys(played).filter((g) => played[g] === 6);
+  return { tables, played, settledGroups };
+}
+
 export interface LeaderboardRow {
   playerId: string;
   displayName: string;
@@ -121,6 +154,7 @@ export async function getLeaderboard(): Promise<LeaderboardRow[]> {
     getConfig(),
   ]);
   const progress = await getRealProgress(core);
+  const real = realGroupTables(core);
   const boostedId = boostTeamId(cfg.scoring, core.teams);
   const predsByPlayer = new Map<string, ScorePred[]>();
   for (const p of allPreds) {
@@ -151,12 +185,16 @@ export async function getLeaderboard(): Promise<LeaderboardRow[]> {
       progress,
       cfg: cfg.scoring,
     });
+    // exact-order bonus: settled groups whose 1st→4th the player nailed
+    const orderBonus =
+      perfectOrderGroups(derived.groupTables, real.tables, real.settledGroups).length *
+      cfg.scoring.groupOrder;
     return {
       playerId: pl.id,
       displayName: pl.displayName,
       matchPoints: matchPts.total,
-      bracketPoints: bracketPts.total,
-      total: matchPts.total + bracketPts.total,
+      bracketPoints: bracketPts.total + orderBonus,
+      total: matchPts.total + bracketPts.total + orderBonus,
       rank: 0,
     };
   });

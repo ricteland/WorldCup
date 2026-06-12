@@ -1,7 +1,7 @@
 {
-  "name": "WC26 Predictor",
-  "short_name": "WC26",
-  "description": "Predict every match of the 2026 World Cup against your friends",
+  "name": "VAMOS2026",
+  "short_name": "VAMOS2026",
+  "description": "The 2026 World Cup, predicted with friends. ¡Vamos!",
   "start_url": "/matches",
   "display": "standalone",
   "background_color": "#060a13",

@@ -8,6 +8,7 @@ import {
   gradeBracketSlot,
   koOpenAndStale,
   matchPointsFor,
+  perfectOrderGroups,
   predictedKoWinner,
   DEFAULT_SCORING,
   type RealMatch,
@@ -174,6 +175,27 @@ describe("computeRealProgress + bracket grading", () => {
     });
     expect(byRound.CHAMPION).toBe(12);
     expect(total).toBe(12);
+  });
+});
+
+describe("perfectOrderGroups", () => {
+  const t = (ids: string[]) => ids.map((teamId) => ({ teamId }));
+
+  it("returns settled groups whose exact 1st→4th order was predicted", () => {
+    const pred = { A: t(["a1", "a2", "a3", "a4"]), B: t(["b1", "b2", "b3", "b4"]) };
+    const real = { A: t(["a1", "a2", "a3", "a4"]), B: t(["b2", "b1", "b3", "b4"]) };
+    expect(perfectOrderGroups(pred, real, ["A", "B"])).toEqual(["A"]);
+  });
+
+  it("only judges settled groups, even when tables happen to match", () => {
+    const pred = { A: t(["a1", "a2", "a3", "a4"]) };
+    const real = { A: t(["a1", "a2", "a3", "a4"]) };
+    expect(perfectOrderGroups(pred, real, [])).toEqual([]);
+  });
+
+  it("skips groups the player hasn't fully predicted", () => {
+    const real = { A: t(["a1", "a2", "a3", "a4"]) };
+    expect(perfectOrderGroups({}, real, ["A"])).toEqual([]);
   });
 });
 

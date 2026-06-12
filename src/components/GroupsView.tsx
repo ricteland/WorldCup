@@ -80,18 +80,31 @@ export function GroupsView({ payload }: { payload: GroupsPayload }) {
 
       <div className="grid gap-3 sm:grid-cols-2">
         {groups.map((g) => (
-          <div key={g.name} className="glass rounded-2xl p-3">
+          <div
+            key={g.name}
+            className={cn(
+              "glass rounded-2xl p-3",
+              g.orderPerfect && "bg-gold-400/10 ring-1 ring-gold-400/50"
+            )}
+          >
             <div className="mb-2 flex items-center justify-between">
               <h2 className="font-display text-sm font-bold text-slate-200">Group {g.name}</h2>
-              {!g.complete ? (
-                <Chip className="bg-white/5 text-slate-500">
-                  {g.predsMade}/6 {real ? "played" : "predicted"}
-                </Chip>
-              ) : thirdGroups?.includes(g.name) ? (
-                <Chip className="bg-gold-400/10 text-gold-300 ring-1 ring-gold-400/30">
-                  3rd qualifies
-                </Chip>
-              ) : null}
+              <span className="flex items-center gap-1.5">
+                {g.orderPerfect && (
+                  <Chip className="bg-gold-400 font-semibold text-night-950">
+                    exact order +{payload.orderBonus}
+                  </Chip>
+                )}
+                {!g.complete ? (
+                  <Chip className="bg-white/5 text-slate-500">
+                    {g.predsMade}/6 {real ? "played" : "predicted"}
+                  </Chip>
+                ) : thirdGroups?.includes(g.name) ? (
+                  <Chip className="bg-gold-400/10 text-gold-300 ring-1 ring-gold-400/30">
+                    3rd qualifies
+                  </Chip>
+                ) : null}
+              </span>
             </div>
 
             <table className="w-full text-xs">
@@ -143,6 +156,11 @@ export function GroupsView({ payload }: { payload: GroupsPayload }) {
       <div className="flex flex-wrap gap-1.5 text-[11px] text-slate-500">
         <Chip className="bg-pitch-500/15 text-pitch-300">1st &amp; 2nd qualify</Chip>
         <Chip className="bg-gold-400/10 text-gold-300">8 best 3rds qualify</Chip>
+        {!real && (
+          <Chip className="bg-gold-400 text-night-950">
+            exact group order +{payload.orderBonus} pts
+          </Chip>
+        )}
       </div>
     </div>
   );
