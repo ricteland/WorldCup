@@ -53,6 +53,8 @@ const NAME_ALIASES: Record<string, string> = {
   "Korea Republic": "South Korea",
   "IR Iran": "Iran",
   "Bosnia and Herzegovina": "Bosnia & Herzegovina",
+  "Bosnia-Herzegovina": "Bosnia & Herzegovina", // the name FD actually sends
+
   "Congo DR": "DR Congo",
   "United States": "USA",
 };
@@ -75,10 +77,20 @@ export function parseFdMatches(res: FdResponse): FdUpdate[] {
     if (!status) continue;
 
     // fullTime carries the running score while in play (penalties excluded),
-    // matching the grading convention of "score after extra time".
-    const s = m.score?.fullTime ?? m.score?.halfTime;
-    const homeScore = s?.home ?? undefined;
-    const awayScore = s?.away ?? undefined;
+    // matching the grading convention of "score after extra time". Read each
+    // side independently with a halfTime fallback: football-data always sends a
+    // fullTime *object*, so `fullTime ?? halfTime` never fires — it's the null
+    // values *inside* it we fall through. A live match with no goals reported
+    // yet (both null) is simply 0-0; default it so the score flows instead of
+    // leaving the card blank while it sits scoreless.
+    const ft = m.score?.fullTime;
+    const ht = m.score?.halfTime;
+    let homeScore = ft?.home ?? ht?.home ?? undefined;
+    let awayScore = ft?.away ?? ht?.away ?? undefined;
+    if (status === "LIVE") {
+      homeScore ??= 0;
+      awayScore ??= 0;
+    }
     // A finished match without a score is useless to us (and unsafe to grade).
     if (status === "FINISHED" && (homeScore == null || awayScore == null)) continue;
 

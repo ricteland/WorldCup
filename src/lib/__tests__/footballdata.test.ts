@@ -19,6 +19,14 @@ const res: FdResponse = {
       score: { winner: null, duration: "REGULAR", fullTime: { home: null, away: null }, halfTime: { home: null, away: null } },
     },
     {
+      // in play but goalless — FD reports null scores, which is really 0-0
+      utcDate: "2026-06-18T19:00:00Z",
+      status: "IN_PLAY",
+      homeTeam: { name: "Switzerland", tla: "SUI" },
+      awayTeam: { name: "Bosnia-Herzegovina", tla: "BIH" },
+      score: { winner: null, duration: "REGULAR", fullTime: { home: null, away: null }, halfTime: { home: null, away: null } },
+    },
+    {
       utcDate: "2026-07-19T19:00:00Z",
       status: "FINISHED",
       homeTeam: { name: "Argentina", tla: "ARG" },
@@ -40,8 +48,8 @@ describe("parseFdMatches", () => {
   const updates = parseFdMatches(res);
 
   it("keeps only in-play and finished matches", () => {
-    expect(updates).toHaveLength(2);
-    expect(updates.map((u) => u.status)).toEqual(["LIVE", "FINISHED"]);
+    expect(updates).toHaveLength(3);
+    expect(updates.map((u) => u.status)).toEqual(["LIVE", "LIVE", "FINISHED"]);
   });
 
   it("carries the running score for live matches", () => {
@@ -52,8 +60,16 @@ describe("parseFdMatches", () => {
     expect(live.winner).toBeUndefined();
   });
 
+  it("treats a goalless live match as 0-0 rather than dropping the score", () => {
+    const live = updates[1];
+    expect(live.homeCode).toBe("SUI");
+    expect(live.homeScore).toBe(0);
+    expect(live.awayScore).toBe(0);
+    expect(live.awayName).toBe("Bosnia & Herzegovina"); // hyphenated alias applied
+  });
+
   it("reports the shootout winner with the after-ET score", () => {
-    const final = updates[1];
+    const final = updates[2];
     expect(final.homeScore).toBe(2);
     expect(final.awayScore).toBe(2);
     expect(final.winner).toBe("AWAY");
