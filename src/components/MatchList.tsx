@@ -3,7 +3,7 @@
 // Match Predictions tab (PLAN.MD §9.1): all 104 matches grouped by day,
 // inline stepper editor, lock state, and result grading colors.
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type Ref } from "react";
 import { useRouter } from "next/navigation";
 import { ChevronDown, LockKeyhole, Minus, Plus, AlertTriangle, MapPin } from "lucide-react";
 import { cn } from "@/lib/cn";
@@ -290,7 +290,13 @@ function LeaguePanel({ match }: { match: MatchView }) {
   );
 }
 
-function MatchCard({ match }: { match: MatchView }) {
+function MatchCard({
+  match,
+  innerRef,
+}: {
+  match: MatchView;
+  innerRef?: Ref<HTMLDivElement>;
+}) {
   const [openEditor, setOpenEditor] = useState(false);
   const [openLeague, setOpenLeague] = useState(false);
   const isKo = match.stage !== "GROUP";
@@ -306,6 +312,7 @@ function MatchCard({ match }: { match: MatchView }) {
 
   return (
     <div
+      ref={innerRef}
       className={cn(
         "rounded-2xl border p-3 transition-colors",
         GRADE_CARD[finished ? match.grade : "PENDING"],
@@ -410,31 +417,87 @@ export function MatchList({ payload }: { payload: MatchesPayload }) {
   const [filter, setFilter] = useState<Filter>("all");
   const today = new Date().toDateString();
 
-  // While a match is in play, re-pull the server payload so live scores and
-  // status flips show up without a manual reload (poller cadence applies).
-  // Background tabs skip the refresh and catch up when they regain focus.
-  const anyLive = payload.matches.some((m) => m.status === "LIVE");
+  // Scroll the current game into view: whatever is live now, else the next one
+  // to kick off, else (tournament over) the most recent. Friends were having to
+  // scroll past every finished game to reach the action. We anchor two games
+  // earlier in the schedule, so the current game lands a little below the top —
+  // with a couple of games visible above it for context — rather than pinned to
+  // the very top. Used by the open-on-mount jump and the "matches today" shortcut.
+  const cardRefs = useRef(new Map<number, HTMLDivElement>());
+  const scrollToCurrent = useCallback(() => {
+    const chrono = [...payload.matches].sort(
+      (a, b) => new Date(a.kickoffUtc).getTime() - new Date(b.kickoffUtc).getTime()
+    );
+    const now = Date.now();
+    const target =
+      chrono.find((m) => m.status === "LIVE") ??
+      chrono.find((m) => m.status !== "FINISHED" && new Date(m.kickoffUtc).getTime() >= now) ??
+      chrono.at(-1);
+    if (!target) return;
+    const anchorId = chrono[Math.max(0, chrono.indexOf(target) - 2)]?.id;
+    if (anchorId == null) return;
+    const el = cardRefs.current.get(anchorId);
+    if (!el) return;
+    // offset clears the sticky top bar + day header
+    const HEADER_OFFSET = 100;
+    const top = el.getBoundingClientRect().top + window.scrollY - HEADER_OFFSET;
+    window.scrollTo({ top: Math.max(0, top) });
+  }, [payload.matches]);
+
+  // Land on the current game when the tab opens — once. router.refresh()
+  // preserves scroll, so live ticks never yank the view back. Two frames so
+  // layout (incl. LocalTime hydration) has settled before we measure.
+  const didScroll = useRef(false);
   useEffect(() => {
-    if (!anyLive) return;
-    let last = Date.now();
-    const refresh = () => {
-      last = Date.now();
-      router.refresh();
-    };
-    const id = setInterval(() => {
-      if (!document.hidden) refresh();
-    }, 60_000);
-    // Catch up when the tab regains visibility, but alt-tabbing back and
-    // forth shouldn't fire a request every time.
-    const onVisible = () => {
-      if (!document.hidden && Date.now() - last > 30_000) refresh();
-    };
-    document.addEventListener("visibilitychange", onVisible);
-    return () => {
-      clearInterval(id);
-      document.removeEventListener("visibilitychange", onVisible);
-    };
-  }, [anyLive, router]);
+    if (didScroll.current) return;
+    didScroll.current = true;
+    const raf = requestAnimationFrame(() => requestAnimationFrame(scrollToCurrent));
+    return () => cancelAnimationFrame(raf);
+  }, [scrollToCurrent]);
+
+  // Keep the live game fresh without a manual reload. While a match is on
+  // (live, or just inside its kickoff window) re-pull the server payload every
+  // 30s; otherwise sit idle but wake once right at the next kickoff so an open
+  // tab starts following the game on its own. Background tabs skip the refresh
+  // and catch up when they regain focus.
+  useEffect(() => {
+    const now = Date.now();
+    const LIVE_WINDOW_MS = 150 * 60 * 1000; // kickoff + 2.5h ≈ in play
+    const hot = payload.matches.some((m) => {
+      if (m.status === "LIVE") return true;
+      if (m.status === "FINISHED") return false;
+      const ko = new Date(m.kickoffUtc).getTime();
+      return now >= ko && now < ko + LIVE_WINDOW_MS;
+    });
+
+    if (hot) {
+      let last = Date.now();
+      const refresh = () => {
+        last = Date.now();
+        router.refresh();
+      };
+      const id = setInterval(() => {
+        if (!document.hidden) refresh();
+      }, 30_000);
+      const onVisible = () => {
+        if (!document.hidden && Date.now() - last > 15_000) refresh();
+      };
+      document.addEventListener("visibilitychange", onVisible);
+      return () => {
+        clearInterval(id);
+        document.removeEventListener("visibilitychange", onVisible);
+      };
+    }
+
+    // Idle: nothing in play. Wake once when the next match kicks off.
+    const future = payload.matches
+      .map((m) => new Date(m.kickoffUtc).getTime())
+      .filter((t) => t > now);
+    if (future.length === 0) return;
+    const delay = Math.min(Math.min(...future) - now + 2_000, 0x7fffffff);
+    const id = setTimeout(() => router.refresh(), delay);
+    return () => clearTimeout(id);
+  }, [payload.matches, router]);
 
   const filtered = useMemo(() => {
     return payload.matches.filter((m) => {
@@ -477,9 +540,13 @@ export function MatchList({ payload }: { payload: MatchesPayload }) {
       </div>
 
       {todayCount > 0 && (
-        <div className="rounded-2xl bg-pitch-500/10 px-4 py-2.5 text-sm text-pitch-300 ring-1 ring-pitch-500/30">
+        <button
+          type="button"
+          onClick={scrollToCurrent}
+          className="block w-full rounded-2xl bg-pitch-500/10 px-4 py-2.5 text-left text-sm text-pitch-300 ring-1 ring-pitch-500/30 transition hover:bg-pitch-500/15 active:scale-[0.99]"
+        >
           ⚽ {todayCount} match{todayCount > 1 ? "es" : ""} today
-        </div>
+        </button>
       )}
 
       <div className="no-scrollbar -mx-1 flex gap-1.5 overflow-x-auto px-1 pb-1">
@@ -520,7 +587,14 @@ export function MatchList({ payload }: { payload: MatchesPayload }) {
           </h2>
           <div className="space-y-2">
             {matches.map((m) => (
-              <MatchCard key={m.id} match={m} />
+              <MatchCard
+                key={m.id}
+                match={m}
+                innerRef={(el) => {
+                  if (el) cardRefs.current.set(m.id, el);
+                  else cardRefs.current.delete(m.id);
+                }}
+              />
             ))}
           </div>
         </section>

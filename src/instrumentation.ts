@@ -25,6 +25,10 @@ export async function register() {
       if (report.liveError) console.warn("[results-sync] live layer failed:", report.liveError);
       // Fast cadence only pays off when the live source is configured.
       if (fdToken() && (report.liveNow ?? 0) > 0) delay = liveMs;
+      // A match starts before the next idle poll: wake right as it kicks off so
+      // live coverage begins within one fast tick, not up to RESULTS_POLL_MINUTES late.
+      else if (report.nextKickoffMs != null && report.nextKickoffMs < idleMs)
+        delay = Math.max(liveMs, report.nextKickoffMs + 5_000);
     } catch (e) {
       console.warn("[results-sync] crashed:", e);
     }

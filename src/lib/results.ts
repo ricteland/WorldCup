@@ -22,6 +22,9 @@ export interface SyncReport {
   liveSource?: "football-data";
   liveError?: string;
   liveNow?: number; // matches currently LIVE — drives the faster poll cadence
+  /** Ms until the next non-finished match kicks off (null if none left) — lets
+   *  the poller wake up right at kickoff instead of on the slow idle cadence. */
+  nextKickoffMs: number | null;
   ranAt: string;
 }
 
@@ -207,6 +210,12 @@ export async function syncResults(): Promise<SyncReport> {
   }
 
   const liveNow = await prisma.match.count({ where: { status: "LIVE" } });
+  const nextMatch = await prisma.match.findFirst({
+    where: { status: { not: "FINISHED" }, kickoffUtc: { gte: new Date() } },
+    orderBy: { kickoffUtc: "asc" },
+    select: { kickoffUtc: true },
+  });
+  const nextKickoffMs = nextMatch ? nextMatch.kickoffUtc.getTime() - Date.now() : null;
 
   return {
     ok: !error,
@@ -217,6 +226,7 @@ export async function syncResults(): Promise<SyncReport> {
     ...(token ? { liveSource: "football-data" as const } : {}),
     liveError,
     liveNow,
+    nextKickoffMs,
     ranAt,
   };
 }
