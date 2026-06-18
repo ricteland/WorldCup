@@ -21,6 +21,16 @@ function format(iso: string, mode: "time" | "datetime" | "date"): string {
   });
 }
 
+// True when `iso` falls on the viewer's local "today". Server snapshot is
+// false so SSR never renders a stale badge before the client knows the date.
+export function useIsToday(iso: string): boolean {
+  return useSyncExternalStore(
+    subscribeNever,
+    () => new Date(iso).toDateString() === new Date().toDateString(),
+    () => false
+  );
+}
+
 export function LocalTime({
   iso,
   mode = "time",

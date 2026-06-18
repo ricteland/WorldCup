@@ -10,7 +10,7 @@ import { cn } from "@/lib/cn";
 import { GRADE_BADGE, GRADE_CARD } from "@/lib/grade";
 import type { MatchesPayload, MatchLeaguePayload, MatchView, TeamView } from "@/lib/views";
 import { Button, Chip } from "./ui";
-import { LocalTime } from "./LocalTime";
+import { LocalTime, useIsToday } from "./LocalTime";
 import { LockCountdown } from "./LockCountdown";
 
 type Filter = "all" | "today" | "group" | "knockout" | "todo";
@@ -412,6 +412,27 @@ function MatchCard({
   );
 }
 
+function DayHeading({ iso }: { iso: string }) {
+  const isToday = useIsToday(iso);
+  return (
+    <h2
+      className={cn(
+        "sticky top-16 z-30 mb-2 flex w-fit items-center gap-2 rounded-full bg-night-900/90 px-3 py-1 text-xs font-semibold uppercase tracking-wider ring-1 backdrop-blur",
+        isToday
+          ? "text-amber-100 ring-amber-300/40 shadow-[0_0_16px_-2px_rgba(251,191,36,0.45)]"
+          : "text-slate-400 ring-white/10"
+      )}
+    >
+      <LocalTime iso={iso} mode="date" />
+      {isToday && (
+        <span className="rounded-full bg-amber-300/15 px-2 py-0.5 text-amber-200 ring-1 ring-amber-300/40">
+          Today
+        </span>
+      )}
+    </h2>
+  );
+}
+
 export function MatchList({ payload }: { payload: MatchesPayload }) {
   const router = useRouter();
   const [filter, setFilter] = useState<Filter>("all");
@@ -582,9 +603,7 @@ export function MatchList({ payload }: { payload: MatchesPayload }) {
 
       {days.map(([day, matches]) => (
         <section key={day}>
-          <h2 className="sticky top-16 z-30 mb-2 w-fit rounded-full bg-night-900/90 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-slate-400 ring-1 ring-white/10 backdrop-blur">
-            <LocalTime iso={matches[0].kickoffUtc} mode="date" />
-          </h2>
+          <DayHeading iso={matches[0].kickoffUtc} />
           <div className="space-y-2">
             {matches.map((m) => (
               <MatchCard
