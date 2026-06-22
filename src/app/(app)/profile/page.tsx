@@ -39,7 +39,6 @@ export default async function ProfilePage() {
   ]);
   const bracketPts = computeBracketPoints({
     groupSlots: derived.slots,
-    koPreds,
     progress,
     cfg: cfg.scoring,
   });

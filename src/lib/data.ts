@@ -170,6 +170,90 @@ export interface LeaderboardRow {
   rank: number;
   /** Ever lost the whole gambling-corner bankroll — the badge is permanent. */
   bankrupt: boolean;
+  /** Places gained since the last snapshot (end of the previous active day):
+   *  +ve = climbed, -ve = dropped, 0 = held, null = no baseline yet (e.g. day
+   *  one, or a player who joined after the last snapshot). */
+  rankDelta: number | null;
+  /** Points earned since that same snapshot. null mirrors rankDelta. */
+  pointsToday: number | null;
+}
+
+// Momentum baseline (PLAN.MD §9.4 extension): the leaderboard remembers where
+// everyone stood at the close of the previous active day so it can show "since
+// yesterday" movement. Captured by the results poller (lib/results), never on a
+// page read. Stored as one Setting JSON blob keyed by UTC day.
+const SNAPSHOT_KEY = "standingsSnapshot";
+
+type StandingEntry = { rank: number; total: number };
+interface StandingsSnapshot {
+  /** UTC day the baseline represents; null until a full day has rolled over. */
+  baselineDate: string | null;
+  baseline: Record<string, StandingEntry>;
+  /** UTC day `live` was last written; becomes the baseline once the day turns. */
+  liveDate: string;
+  live: Record<string, StandingEntry>;
+}
+
+const utcDay = (d = new Date()): string => d.toISOString().slice(0, 10);
+
+async function readSnapshot(): Promise<StandingsSnapshot | null> {
+  const row = await prisma.setting.findUnique({ where: { key: SNAPSHOT_KEY } });
+  if (!row) return null;
+  try {
+    return JSON.parse(row.value) as StandingsSnapshot;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Fold the current standings into the snapshot. Within a day this just refreshes
+ * `live`; when the UTC day turns, yesterday's `live` is promoted to the baseline
+ * first — so the baseline is always the last standings seen on the prior active
+ * day (≈ end of yesterday). Called from the results poller after each sync.
+ */
+export async function captureStandingsSnapshot(rows?: LeaderboardRow[]): Promise<void> {
+  const ranked = rows ?? (await getLeaderboard());
+  const today = utcDay();
+  const live: Record<string, StandingEntry> = {};
+  for (const r of ranked) live[r.playerId] = { rank: r.rank, total: r.total };
+
+  const prev = await readSnapshot();
+  let baseline: Record<string, StandingEntry> = {};
+  let baselineDate: string | null = null;
+  if (prev) {
+    if (prev.liveDate === today) {
+      // Same day — keep the baseline we already rolled to this morning.
+      baseline = prev.baseline;
+      baselineDate = prev.baselineDate;
+    } else {
+      // Day turned: the last standings we saw become the new baseline.
+      baseline = prev.live;
+      baselineDate = prev.liveDate;
+    }
+  }
+
+  const next: StandingsSnapshot = { baselineDate, baseline, liveDate: today, live };
+  await prisma.setting.upsert({
+    where: { key: SNAPSHOT_KEY },
+    update: { value: JSON.stringify(next) },
+    create: { key: SNAPSHOT_KEY, value: JSON.stringify(next) },
+  });
+}
+
+/** Attach rankDelta / pointsToday to ranked rows from the stored baseline. */
+function applyMomentum(rows: LeaderboardRow[], snap: StandingsSnapshot | null): void {
+  for (const r of rows) {
+    const base = snap?.baseline[r.playerId];
+    if (!base) {
+      r.rankDelta = null;
+      r.pointsToday = null;
+      continue;
+    }
+    // Lower rank number is better, so an improvement is baseline − current.
+    r.rankDelta = base.rank - r.rank;
+    r.pointsToday = r.total - base.total;
+  }
 }
 
 /**
@@ -212,7 +296,6 @@ export async function getLeaderboard(): Promise<LeaderboardRow[]> {
     });
     const bracketPts = computeBracketPoints({
       groupSlots: derived.slots,
-      koPreds,
       progress,
       cfg: cfg.scoring,
     });
@@ -228,6 +311,8 @@ export async function getLeaderboard(): Promise<LeaderboardRow[]> {
       total: matchPts.total + bracketPts.total + orderBonus,
       rank: 0,
       bankrupt: pl.gambleBusted,
+      rankDelta: null as number | null,
+      pointsToday: null as number | null,
     };
   });
 
@@ -246,5 +331,6 @@ export async function getLeaderboard(): Promise<LeaderboardRow[]> {
       lotsHash("leaderboard", a.playerId) - lotsHash("leaderboard", b.playerId)
   );
   rows.forEach((r, i) => (r.rank = i + 1));
+  applyMomentum(rows, await readSnapshot());
   return rows;
 }

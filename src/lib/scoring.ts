@@ -14,6 +14,7 @@ import {
   CHAMPION_SLOT,
   SCORING_ROUNDS,
   type ScoringRound,
+  type KoGameRound,
 } from "./bracket";
 
 export interface ScoringConfig {
@@ -22,7 +23,11 @@ export interface ScoringConfig {
   result: number;
   /** Bonus per group whose final order was predicted exactly (1st→4th). */
   groupOrder: number;
-  bracket: Record<ScoringRound, number>;
+  /** Points per real qualifier among the 32 a player's group tables send through. */
+  r32Qualifier: number;
+  /** Match points are multiplied by this factor for knockout games, by round —
+   *  the deeper the round, the bigger the prize. */
+  koMultiplier: Record<KoGameRound, number>;
   /** Match points are multiplied when this team plays (the league is Spanish). */
   boostTeamCode: string | null;
   boostMultiplier: number;
@@ -32,14 +37,30 @@ export const DEFAULT_SCORING: ScoringConfig = {
   exact: 5,
   result: 3,
   groupOrder: 3,
-  bracket: { R32: 1, R16: 2, QF: 4, SF: 6, FINAL: 8, CHAMPION: 12 },
+  r32Qualifier: 1,
+  koMultiplier: { R32: 2, R16: 3, QF: 4, SF: 5, FINAL: 6 },
   boostTeamCode: "ESP",
   boostMultiplier: 3,
 };
 
-export function matchPointsFor(grade: Grade, cfg: ScoringConfig, boosted = false): number {
+export function matchPointsFor(
+  grade: Grade,
+  cfg: ScoringConfig,
+  boosted = false,
+  koMultiplier = 1
+): number {
   const base = grade === "EXACT" ? cfg.exact : grade === "RESULT" ? cfg.result : 0;
-  return boosted ? base * cfg.boostMultiplier : base;
+  return base * (boosted ? cfg.boostMultiplier : 1) * koMultiplier;
+}
+
+/**
+ * Knockout points multiplier for a match, by round (R32 ×2 … Final ×6 by
+ * default). Group games and the third-place play-off score normally (×1).
+ */
+export function koMultiplierFor(matchId: number, cfg: ScoringConfig): number {
+  if (matchId <= 72) return 1;
+  const round = roundOfMatch(matchId);
+  return round === "THIRD" ? 1 : cfg.koMultiplier[round];
 }
 
 /** Resolve the boosted team's id (cuid) from its code, or null when disabled. */
@@ -274,64 +295,23 @@ export function koOpenAndStale(
   return { open, stale };
 }
 
-/** Round a knockout match's winner advances to (final → CHAMPION; third place → null). */
-export function advanceRoundOfMatch(num: number): Exclude<ScoringRound, "R32"> | null {
-  switch (roundOfMatch(num)) {
-    case "R32":
-      return "R16";
-    case "R16":
-      return "QF";
-    case "QF":
-      return "SF";
-    case "SF":
-      return "FINAL";
-    case "FINAL":
-      return "CHAMPION";
-    default:
-      return null; // THIRD — not scored
-  }
-}
-
 /**
  * Bracket points (PLAN.MD §6, round-by-round edition):
- * - R32: +1 per real qualifier among the 32 teams the player's own predicted
- *   group tables send through (the only bracket points still driven by
- *   group-stage predictions).
- * - Later rounds: each knockout pick names a winner among the real
- *   participants; when that team really advances, the destination round's
- *   points are awarded (R32 pick → R16 pts … final pick → CHAMPION pts).
- *   Stale picks score nothing.
+ * +cfg.r32Qualifier per real qualifier among the 32 teams the player's own
+ * predicted group tables send through — the only bracket points still driven by
+ * group-stage predictions. Knockout progress is rewarded through the per-round
+ * match-point multiplier (see koMultiplierFor), not flat advancement bonuses.
  */
 export function computeBracketPoints(input: {
   /** The player's derived slots from group predictions (R32 seeding only). */
   groupSlots: Record<string, string>;
-  koPreds: Map<number, KoPredEntry>;
   progress: RealProgress;
   cfg: ScoringConfig;
-}): { total: number; byRound: Record<ScoringRound, number> } {
-  const { groupSlots, koPreds, progress, cfg } = input;
-  const byRound = Object.fromEntries(SCORING_ROUNDS.map((r) => [r, 0])) as Record<
-    ScoringRound,
-    number
-  >;
-
+}): { total: number } {
+  const { groupSlots, progress, cfg } = input;
   let correct = 0;
   for (const t of reachedByRound(groupSlots).R32) if (progress.reached.R32.has(t)) correct++;
-  byRound.R32 = correct * cfg.bracket.R32;
-
-  for (const [num, p] of koPreds) {
-    const dest = advanceRoundOfMatch(num);
-    if (!dest) continue;
-    const home = progress.realSlots[slotKey(num, "H")];
-    const away = progress.realSlots[slotKey(num, "A")];
-    if (!home || !away || koPredStale(p, home, away)) continue;
-    const winner = predictedKoWinner(p, home, away);
-    if (winner && progress.reached[dest].has(winner)) byRound[dest] += cfg.bracket[dest];
-  }
-
-  let total = 0;
-  for (const r of SCORING_ROUNDS) total += byRound[r];
-  return { total, byRound };
+  return { total: correct * cfg.r32Qualifier };
 }
 
 /**
@@ -388,7 +368,7 @@ export function computeMatchPoints(
     }
     const g = gradeScore(pred, { homeScore: m.homeScore, awayScore: m.awayScore });
     graded.set(m.id, g);
-    total += matchPointsFor(g, cfg, matchInvolves(m, boostedTeamId));
+    total += matchPointsFor(g, cfg, matchInvolves(m, boostedTeamId), koMultiplierFor(m.id, cfg));
   }
   return { total, graded };
 }

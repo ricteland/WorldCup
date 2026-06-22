@@ -8,6 +8,23 @@ import type { LeaderboardRow } from "@/lib/data";
 
 const MEDALS = ["🥇", "🥈", "🥉"];
 
+// Rank movement since the end of yesterday. Up is good (green), down red, a
+// held position a muted dash. null (no baseline / just joined) shows nothing.
+function RankMove({ delta }: { delta: number | null }) {
+  if (delta == null) return null;
+  if (delta === 0) return <span className="text-[10px] text-slate-600">–</span>;
+  const up = delta > 0;
+  return (
+    <span
+      className={cn("text-[10px] font-semibold tabular-nums", up ? "text-pitch-400" : "text-red-400")}
+      title={`${up ? "Up" : "Down"} ${Math.abs(delta)} since yesterday`}
+    >
+      {up ? "▲" : "▼"}
+      {Math.abs(delta)}
+    </span>
+  );
+}
+
 export function LeaderboardView({ rows, you }: { rows: LeaderboardRow[]; you: string }) {
   return (
     <div className="space-y-4">
@@ -44,8 +61,13 @@ export function LeaderboardView({ rows, you }: { rows: LeaderboardRow[]; you: st
                       isYou && "bg-pitch-500/10"
                     )}
                   >
-                    <td className="px-3 py-2.5 font-display font-bold text-slate-400">
-                      {MEDALS[r.rank - 1] ?? r.rank}
+                    <td className="px-3 py-2.5">
+                      <div className="flex flex-col items-center leading-none">
+                        <span className="font-display font-bold text-slate-400">
+                          {MEDALS[r.rank - 1] ?? r.rank}
+                        </span>
+                        <RankMove delta={r.rankDelta} />
+                      </div>
                     </td>
                     <td className="py-2.5">
                       <span className={cn("font-semibold", isYou ? "text-pitch-300" : "text-slate-200")}>
@@ -63,8 +85,18 @@ export function LeaderboardView({ rows, you }: { rows: LeaderboardRow[]; you: st
                     </td>
                     <td className="py-2.5 text-center text-slate-400">{r.matchPoints}</td>
                     <td className="py-2.5 text-center text-slate-400">{r.bracketPoints}</td>
-                    <td className="font-display px-3 py-2.5 text-right text-base font-bold text-slate-100">
-                      {r.total}
+                    <td className="px-3 py-2.5 text-right">
+                      <div className="flex flex-col items-end leading-none">
+                        <span className="font-display text-base font-bold text-slate-100">{r.total}</span>
+                        {r.pointsToday != null && r.pointsToday > 0 && (
+                          <span
+                            className="mt-0.5 text-[10px] font-semibold text-pitch-400"
+                            title="Points earned today"
+                          >
+                            +{r.pointsToday}
+                          </span>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 );
@@ -75,7 +107,7 @@ export function LeaderboardView({ rows, you }: { rows: LeaderboardRow[]; you: st
       )}
 
       <p className="text-center text-[11px] text-slate-600">
-        ⚽ match points · 🏆 bracket points · ties shown in random order
+        ⚽ match points · 🏆 bracket points · ▲▼ movement since yesterday · ties shown in random order
       </p>
     </div>
   );

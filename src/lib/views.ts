@@ -6,9 +6,9 @@ import { getConfig, isMatchLocked, matchLockAt } from "./config";
 import { getCore, derivePlayer, getRealProgress, realGroupTables, toMaps } from "./data";
 import { gradeScore, type Grade } from "./grade";
 import {
-  advanceRoundOfMatch,
   boostTeamId,
   gradeBracketSlot,
+  koMultiplierFor,
   koOpenAndStale,
   matchInvolves,
   matchPointsFor,
@@ -118,7 +118,12 @@ export async function getMatchesView(playerId: string): Promise<MatchesPayload> 
         ? { homeScore: pred.homeScore, awayScore: pred.awayScore, predWinnerTeamId: pred.predWinnerTeamId }
         : null,
       grade,
-      points: matchPointsFor(grade, cfg.scoring, matchInvolves(m, boostedId)),
+      points: matchPointsFor(
+        grade,
+        cfg.scoring,
+        matchInvolves(m, boostedId),
+        koMultiplierFor(m.id, cfg.scoring)
+      ),
       boost: matchInvolves(m, boostedId) ? cfg.scoring.boostMultiplier : null,
       locked: cfg.predictionsLocked || isMatchLocked(m.kickoffUtc, cfg.lockMinutes),
       lockAtUtc: matchLockAt(m.kickoffUtc, cfg.lockMinutes).toISOString(),
@@ -149,10 +154,8 @@ export interface MatchLeagueRowView {
   /** Knockout pick made against a matchup reality no longer matches. */
   stale: boolean;
   grade: Grade;
-  /** Match points (exact/result × boost), 0 until the match is finished. */
+  /** Match points (exact/result × boost × knockout-round multiplier), 0 until finished. */
   points: number;
-  /** Advance-bonus points this match's result decided (knockouts only). */
-  bonus: number;
 }
 
 export interface MatchLeaguePayload {
@@ -178,9 +181,8 @@ export async function getMatchLeagueView(
   ]);
   const predByPlayer = new Map(preds.map((p) => [p.playerId, p]));
   const boosted = matchInvolves(m, boostTeamId(cfg.scoring, core.teams));
+  const koMult = koMultiplierFor(m.id, cfg.scoring);
   const finished = m.status === "FINISHED" && m.homeScore != null && m.awayScore != null;
-  const { winner: realWinner } = realWinnerLoser(m);
-  const advanceRound = m.stage === "GROUP" ? null : advanceRoundOfMatch(m.id);
 
   const rows = players.map((pl): MatchLeagueRowView => {
     const p = predByPlayer.get(pl.id);
@@ -195,17 +197,6 @@ export async function getMatchLeagueView(
       finished && !stale
         ? gradeScore(p, { homeScore: m.homeScore!, awayScore: m.awayScore! })
         : "PENDING";
-    // a knockout result settles the advance bonus for everyone who picked its
-    // winner — attribute those points to this match's leaderboard
-    let bonus = 0;
-    if (p && !stale && advanceRound && realWinner && m.homeTeamId && m.awayTeamId) {
-      const picked = predictedKoWinner(
-        { homeScore: p.homeScore, awayScore: p.awayScore, winnerTeamId: p.predWinnerTeamId },
-        m.homeTeamId,
-        m.awayTeamId
-      );
-      if (picked === realWinner) bonus = cfg.scoring.bracket[advanceRound];
-    }
     return {
       playerId: pl.id,
       name: pl.displayName,
@@ -219,8 +210,7 @@ export async function getMatchLeagueView(
         : null,
       stale,
       grade,
-      points: matchPointsFor(grade, cfg.scoring, boosted),
-      bonus,
+      points: matchPointsFor(grade, cfg.scoring, boosted, koMult),
     };
   });
 
@@ -228,7 +218,7 @@ export async function getMatchLeagueView(
     const gradeOrder: Record<Grade, number> = { EXACT: 0, RESULT: 1, WRONG: 2, PENDING: 3 };
     rows.sort(
       (a, b) =>
-        b.points + b.bonus - (a.points + a.bonus) ||
+        b.points - a.points ||
         gradeOrder[a.grade] - gradeOrder[b.grade] ||
         a.name.localeCompare(b.name)
     );

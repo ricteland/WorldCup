@@ -238,7 +238,7 @@ function LeaguePanel({ match }: { match: MatchView }) {
         {finished ? "Match leaderboard" : "League predictions"}
       </p>
       {data.rows.map((r, i) => {
-        const total = r.points + r.bonus;
+        const total = r.points;
         if (finished && total !== prevTotal) {
           rank = i + 1;
           prevTotal = total;
@@ -266,11 +266,6 @@ function LeaguePanel({ match }: { match: MatchView }) {
                 </Chip>
               ) : (
                 <span className="text-[11px] text-slate-600">no prediction</span>
-              )}
-              {finished && r.bonus > 0 && (
-                <Chip className="bg-gold-400/10 text-gold-300 ring-1 ring-gold-400/30">
-                  adv +{r.bonus}
-                </Chip>
               )}
               {finished && (
                 <span

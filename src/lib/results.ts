@@ -243,5 +243,13 @@ export async function recordSyncReport(report: SyncReport): Promise<void> {
 export async function runSync(): Promise<SyncReport> {
   const report = await syncResults();
   await recordSyncReport(report);
+  // Refresh the leaderboard momentum baseline so "since yesterday" movement
+  // stays current. Best-effort: a snapshot hiccup must never fail a sync.
+  try {
+    const { captureStandingsSnapshot } = await import("./data");
+    await captureStandingsSnapshot();
+  } catch (e) {
+    console.warn("[results-sync] snapshot failed:", e);
+  }
   return report;
 }

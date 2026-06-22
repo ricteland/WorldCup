@@ -16,6 +16,8 @@ import {
 
 export type Round = "R32" | "R16" | "QF" | "SF" | "THIRD" | "FINAL";
 export type ScoringRound = "R32" | "R16" | "QF" | "SF" | "FINAL" | "CHAMPION";
+/** Knockout rounds that are actually played as a match (third place aside). */
+export type KoGameRound = Exclude<Round, "THIRD">;
 
 export const SCORING_ROUNDS: ScoringRound[] = ["R32", "R16", "QF", "SF", "FINAL", "CHAMPION"];
 

@@ -12,7 +12,7 @@ const WelcomeCtx = createContext<{ open: () => void }>({ open: () => {} });
 export const useWelcome = () => useContext(WelcomeCtx);
 
 // bump the suffix when the rules change so everyone sees the dialog again
-const SEEN_KEY = "wc26:welcomed:v2";
+const SEEN_KEY = "wc26:welcomed:v3";
 const subscribeNever = () => () => {};
 
 export function WelcomeProvider({
@@ -92,26 +92,30 @@ export function WelcomeProvider({
                     {scoring.boostTeamCode === "ESP" ? "Spain" : scoring.boostTeamCode}. ¡Vamos!
                   </p>
                 )}
+                <p className="mb-1.5 mt-2 text-xs text-slate-400">
+                  Knockout games are worth more — your match points are multiplied the deeper the
+                  round goes:
+                </p>
+                <div className="grid grid-cols-5 gap-1.5 text-center">
+                  {Object.entries(scoring.koMultiplier).map(([round, mult]) => (
+                    <div key={round} className="rounded-lg bg-white/[0.03] px-2 py-1.5">
+                      <div className="text-[11px] uppercase tracking-wide text-slate-400">
+                        {round === "FINAL" ? "Final" : round}
+                      </div>
+                      <div className="font-display font-bold text-gold-300">×{mult}</div>
+                    </div>
+                  ))}
+                </div>
               </div>
 
               <div>
                 <h3 className="mb-1.5 font-semibold text-slate-100">Bracket points</h3>
-                <p className="mb-1.5 text-xs text-slate-400">
-                  R32: +{scoring.bracket.R32} per team your group tables correctly send through,
+                <p className="text-xs text-slate-400">
+                  R32: +{scoring.r32Qualifier} per team your group tables correctly send through,
                   and +{scoring.groupOrder} per settled group whose final order (1st→4th) you
-                  called exactly. Later rounds: when the winner you picked in a knockout game
-                  really goes through, you earn the round they advance to:
+                  called exactly. Getting the deeper rounds right is rewarded through the knockout
+                  multipliers above.
                 </p>
-                <div className="grid grid-cols-3 gap-1.5 text-center">
-                  {Object.entries(scoring.bracket).map(([round, pts]) => (
-                    <div key={round} className="rounded-lg bg-white/[0.03] px-2 py-1.5">
-                      <div className="text-[11px] uppercase tracking-wide text-slate-400">
-                        {round === "CHAMPION" ? "Champion" : round === "FINAL" ? "Final" : round}
-                      </div>
-                      <div className="font-display font-bold text-gold-300">+{pts}</div>
-                    </div>
-                  ))}
-                </div>
               </div>
 
               <div>
