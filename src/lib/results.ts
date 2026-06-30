@@ -130,6 +130,29 @@ function matchForUpdate(
   return candidates.length === 1 ? { db: candidates[0], homeTeamId, awayTeamId } : null;
 }
 
+/** Resolve the winner's team id from a football-data update, accounting for a
+ *  home/away orientation that may differ between our row and the feed. Returns
+ *  null when the feed reports no decisive winner — notably a penalty shootout
+ *  it still labels a regulation DRAW until the result lands. */
+export function fdWinnerId(
+  u: Pick<FdUpdate, "winner">,
+  db: { homeTeamId: string | null; awayTeamId: string | null },
+  homeTeamId?: string,
+  awayTeamId?: string
+): string | null {
+  const flipped = homeTeamId != null && db.homeTeamId === awayTeamId && db.awayTeamId === homeTeamId;
+  const side = flipped
+    ? u.winner === "HOME"
+      ? "AWAY"
+      : u.winner === "AWAY"
+        ? "HOME"
+        : undefined
+    : u.winner;
+  if (side === "HOME") return db.homeTeamId ?? homeTeamId ?? null;
+  if (side === "AWAY") return db.awayTeamId ?? awayTeamId ?? null;
+  return null;
+}
+
 async function syncFootballData(token: string): Promise<{ updated: number; finished: number }> {
   const updates = await fetchFdUpdates(token);
   let updated = 0;
@@ -143,8 +166,21 @@ async function syncFootballData(token: string): Promise<{ updated: number; finis
     const hit = matchForUpdate(u, dbMatches, teams);
     if (!hit) continue;
     const { db, homeTeamId, awayTeamId } = hit;
-    // Admin override and already-graded results stay authoritative.
-    if (db.status === "FINISHED") continue;
+    // Admin overrides and already-graded results stay authoritative, with one
+    // exception: backfill a winner that was never recorded. Football-data
+    // labels a penalty shootout a regulation DRAW until the result lands, so a
+    // level knockout can finish with a null winnerTeamId and strand the bracket
+    // (nobody advances). Apply that single field once it arrives; nothing else.
+    if (db.status === "FINISHED") {
+      if (db.winnerTeamId == null && u.status === "FINISHED") {
+        const winnerId = fdWinnerId(u, db, homeTeamId, awayTeamId);
+        if (winnerId) {
+          await prisma.match.update({ where: { id: db.id }, data: { winnerTeamId: winnerId } });
+          updated++;
+        }
+      }
+      continue;
+    }
 
     const flipped = homeTeamId != null && db.homeTeamId === awayTeamId && db.awayTeamId === homeTeamId;
     const patch: Record<string, unknown> = {};
@@ -158,13 +194,11 @@ async function syncFootballData(token: string): Promise<{ updated: number; finis
     if (as != null && db.awayScore !== as) patch.awayScore = as;
 
     if (u.status === "FINISHED") {
-      const winnerSide = flipped ? (u.winner === "HOME" ? "AWAY" : u.winner === "AWAY" ? "HOME" : undefined) : u.winner;
-      const winnerId =
-        winnerSide === "HOME"
-          ? (patch.homeTeamId as string | undefined) ?? db.homeTeamId
-          : winnerSide === "AWAY"
-            ? (patch.awayTeamId as string | undefined) ?? db.awayTeamId
-            : null;
+      const resolved = {
+        homeTeamId: (patch.homeTeamId as string) ?? db.homeTeamId,
+        awayTeamId: (patch.awayTeamId as string) ?? db.awayTeamId,
+      };
+      const winnerId = fdWinnerId(u, resolved, homeTeamId, awayTeamId);
       if (winnerId && db.winnerTeamId !== winnerId) patch.winnerTeamId = winnerId;
       patch.status = "FINISHED";
       finished++;
