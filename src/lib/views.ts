@@ -407,6 +407,9 @@ export interface BracketMatchView {
   home: BracketSideView;
   away: BracketSideView;
   pred: { homeScore: number; awayScore: number; predWinnerTeamId: string | null } | null;
+  /** Score-prediction grade vs the real result — drives the card color, same
+   *  as the Matches tab (exact/result/wrong/pending). */
+  grade: Grade;
   locked: boolean;
   lockAtUtc: string;
   open: boolean;
@@ -480,6 +483,14 @@ export async function getBracketView(playerId: string): Promise<BracketPayload> 
         grade: sideGrade(teamId),
       });
 
+      // Card-level grade: the player's predicted score vs the real result,
+      // gated exactly like the Matches tab (a stale pick stays neutral).
+      const finished = db.status === "FINISHED" && db.homeScore != null && db.awayScore != null;
+      const grade: Grade =
+        finished && !stale.has(num)
+          ? gradeScore(p, { homeScore: db.homeScore!, awayScore: db.awayScore! })
+          : "PENDING";
+
       return {
         num,
         round,
@@ -490,6 +501,7 @@ export async function getBracketView(playerId: string): Promise<BracketPayload> 
         pred: p
           ? { homeScore: p.homeScore, awayScore: p.awayScore, predWinnerTeamId: p.predWinnerTeamId }
           : null,
+        grade,
         locked: cfg.predictionsLocked || isMatchLocked(db.kickoffUtc, cfg.lockMinutes),
         lockAtUtc: matchLockAt(db.kickoffUtc, cfg.lockMinutes).toISOString(),
         open: open.has(num),

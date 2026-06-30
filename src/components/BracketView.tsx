@@ -100,7 +100,7 @@ function BracketCard({ match }: { match: BracketMatchView }) {
     <div
       className={cn(
         "w-60 shrink-0 rounded-2xl border p-2",
-        GRADE_CARD.PENDING,
+        GRADE_CARD[finished ? match.grade : "PENDING"],
         match.stale && "border-gold-400/40"
       )}
     >
